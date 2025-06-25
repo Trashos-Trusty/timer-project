@@ -168,7 +168,7 @@ class UpdateManager {
       type: 'info',
       title: 'Mise à jour disponible',
       message: `Une nouvelle version (${info.version}) est disponible !`,
-      detail: `Version actuelle : ${require('../../package.json').version}\nNouvelle version : ${info.version}\n\n${info.releaseNotes || 'Améliorations et corrections de bugs.'}`,
+      detail: `Version actuelle : ${require('electron').app.getVersion()}\nNouvelle version : ${info.version}\n\n${info.releaseNotes || 'Améliorations et corrections de bugs.'}`,
       buttons: ['Télécharger maintenant', 'Plus tard', 'Voir les détails'],
       defaultId: 0,
       cancelId: 1
