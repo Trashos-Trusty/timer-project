@@ -52,6 +52,7 @@
     "appId": "com.timerproject.app",
     "productName": "Timer Project",
     "copyright": "Copyright © 2025 Timer Project",
+    "icon": "assets/icon.ico",
     "directories": {
       "output": "dist"
     },
@@ -115,9 +116,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
       "deleteAppDataOnUninstall": false
     }
   },
