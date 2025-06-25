@@ -1,0 +1,43 @@
+# Fichiers sensibles - NE PAS PUBLIER
+api-timer.php
+*.sql
+
+# Documentation interne - garder seulement readme.md  
+*.md
+!readme.md
+
+# Plugin WordPress
+wordpress-plugin/
+
+# Fichiers de configuration locaux
+config.json
+.env
+.env.local
+
+# Dépendances
+node_modules/
+npm-debug.log*
+
+# Build
+/build
+/dist
+
+# Cache
+.cache/
+.tmp/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Electron
+out/
