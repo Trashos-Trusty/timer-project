@@ -81,7 +81,7 @@ const Header = ({
           {currentView === 'stopwatch' && (
             <div className="flex items-center space-x-2 px-3 py-2 bg-warning-50 text-warning-700 rounded-lg border border-warning-200">
               <Clock className="w-4 h-4" />
-              <span className="text-sm font-medium">Mode personnel</span>
+              <span className="text-sm font-medium">Mode perso</span>
             </div>
           )}
 
