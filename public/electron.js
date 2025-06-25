@@ -4,9 +4,38 @@ const path = require('path');
 // Remplacer electron-is-dev par une vérification simple
 const isDev = process.env.NODE_ENV === 'development' || process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath);
 
-const ConfigManager = require('../src/utils/configManager');
-const ApiManager = require('../src/utils/apiManager');
-const UpdateManager = require('../src/utils/updateManager');
+// Gestion intelligente des chemins pour dev et production
+const getUtilsPath = (filename) => {
+  if (isDev) {
+    // En développement : chemin relatif classique
+    return path.join(__dirname, '..', 'src', 'utils', filename);
+  } else {
+    // En production : les utils sont dans resources/app.asar/src/utils/
+    return path.join(__dirname, '..', 'src', 'utils', filename);
+  }
+};
+
+let ConfigManager, ApiManager, UpdateManager;
+
+try {
+  ConfigManager = require(getUtilsPath('configManager'));
+  ApiManager = require(getUtilsPath('apiManager'));
+  UpdateManager = require(getUtilsPath('updateManager'));
+} catch (error) {
+  console.error('Erreur chargement modules utils:', error);
+  // Fallback : essayer le chemin direct
+  try {
+    ConfigManager = require(path.join(process.resourcesPath, 'app.asar', 'src', 'utils', 'configManager'));
+    ApiManager = require(path.join(process.resourcesPath, 'app.asar', 'src', 'utils', 'apiManager'));
+    UpdateManager = require(path.join(process.resourcesPath, 'app.asar', 'src', 'utils', 'updateManager'));
+  } catch (error2) {
+    console.error('Erreur fallback:', error2);
+    // Dernier fallback : pas d'utils (mode dégradé)
+    ConfigManager = null;
+    ApiManager = null;
+    UpdateManager = null;
+  }
+}
 
 // Variables globales
 let mainWindow;
@@ -147,27 +176,37 @@ app.whenReady().then(async () => {
     app.commandLine.appendSwitch('disable-features', 'VizDisplayCompositor');
   }
   
-  // Initialiser les gestionnaires
-  configManager = ConfigManager; // ConfigManager est déjà une instance
-  apiManager = new ApiManager();
-  
-  // Charger la configuration
-  await configManager.loadConfig();
-  const apiConfig = configManager.getApiConfig();
-  apiManager.setConfig(apiConfig);
-  
-  // Initialiser la connexion API si configurée
-  if (configManager.isApiConfigured()) {
-    console.log('🔌 Initialisation de la connexion API...');
+  // Initialiser les gestionnaires seulement s'ils sont disponibles
+  if (ConfigManager && ApiManager) {
+    configManager = ConfigManager; // ConfigManager est déjà une instance
+    apiManager = new ApiManager();
+    
     try {
-      // Charger le token local s'il existe
-      await apiManager.loadTokenLocally();
-      console.log('✅ Connexion API initialisée avec succès');
+      // Charger la configuration
+      await configManager.loadConfig();
+      const apiConfig = configManager.getApiConfig();
+      apiManager.setConfig(apiConfig);
+      
+      // Initialiser la connexion API si configurée
+      if (configManager.isApiConfigured()) {
+        console.log('🔌 Initialisation de la connexion API...');
+        try {
+          // Charger le token local s'il existe
+          await apiManager.loadTokenLocally();
+          console.log('✅ Connexion API initialisée avec succès');
+        } catch (error) {
+          console.warn('⚠️ Erreur lors de l\'initialisation API:', error.message);
+        }
+      } else {
+        console.log('ℹ️ Configuration API manquante, connexion non initialisée');
+      }
     } catch (error) {
-      console.warn('⚠️ Erreur lors de l\'initialisation API:', error.message);
+      console.error('⚠️ Erreur lors de l\'initialisation des gestionnaires:', error);
     }
   } else {
-    console.log('ℹ️ Configuration API manquante, connexion non initialisée');
+    console.warn('⚠️ Modules utils non disponibles, fonctionnement en mode dégradé');
+    configManager = null;
+    apiManager = null;
   }
   
   createWindow();
@@ -216,6 +255,11 @@ ipcMain.handle('open-external', async (event, url) => {
 // Gestion des projets avec API
 ipcMain.handle('load-projects', async () => {
   try {
+    if (!configManager || !apiManager) {
+      console.log('Gestionnaires non disponibles, retour d\'une liste vide');
+      return [];
+    }
+    
     if (!configManager.isApiConfigured()) {
       console.log('API non configuré, retour d\'une liste vide');
       return [];
@@ -230,6 +274,11 @@ ipcMain.handle('load-projects', async () => {
 
 ipcMain.handle('load-project', async (event, projectId) => {
   try {
+    if (!configManager || !apiManager) {
+      console.log('Gestionnaires non disponibles, impossible de charger le projet');
+      return null;
+    }
+    
     if (!configManager.isApiConfigured()) {
       console.log('API non configuré, impossible de charger le projet');
       return null;
@@ -254,6 +303,10 @@ ipcMain.handle('load-project', async (event, projectId) => {
 
 ipcMain.handle('save-project', async (event, projectData, originalName = null) => {
   try {
+    if (!configManager || !apiManager) {
+      throw new Error('Gestionnaires non disponibles');
+    }
+    
     if (!configManager.isApiConfigured()) {
       throw new Error('Configuration API requise');
     }
@@ -277,6 +330,10 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
 
 ipcMain.handle('delete-project', async (event, projectId) => {
   try {
+    if (!configManager || !apiManager) {
+      throw new Error('Gestionnaires non disponibles');
+    }
+    
     if (!configManager.isApiConfigured()) {
       throw new Error('Configuration API requise');
     }
@@ -299,11 +356,18 @@ ipcMain.handle('delete-project', async (event, projectId) => {
 
 // Gestion de la configuration API
 ipcMain.handle('get-api-config', async () => {
+  if (!configManager) {
+    return { baseUrl: '', username: '', password: '' };
+  }
   return configManager.getApiConfig();
 });
 
 ipcMain.handle('set-api-config', async (event, apiConfig) => {
   try {
+    if (!configManager || !apiManager) {
+      throw new Error('Gestionnaires non disponibles');
+    }
+    
     await configManager.setApiConfig(apiConfig);
     apiManager.setConfig(apiConfig);
     console.log('Configuration API mise à jour');
