@@ -1,8 +1,8 @@
 {
   "name": "timer-project",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Application de minuteur de projet avec Electron et React",
-  "author": "Votre Nom <votre.email@example.com>",
+  "author": "Enguerran Chaulier <enguerran@trustystudio.fr>",
   "main": "public/electron.js",
   "private": true,
   "homepage": "./",
@@ -60,7 +60,7 @@
       "build/**/*",
       "public/electron.js",
       "public/preload.js",
-      "public/utils/**/*",
+      "src/utils/**/*",
       "node_modules/**/*",
       "!node_modules/electron/**/*",
       "!**/node_modules/**/*.{md,txt,yml,yaml}"
