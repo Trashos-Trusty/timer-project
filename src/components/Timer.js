@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2 } from 'lucide-react';
-import connectionManager from '../utils/ConnectionManager';
+import connectionManager from '../connectionManager';
 
 const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled = false, onTimerStateChange }, ref) => {
   const [currentTime, setCurrentTime] = useState(0);

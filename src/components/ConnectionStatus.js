@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import connectionManager from '../utils/ConnectionManager';
+import connectionManager from '../connectionManager';
 
 const ConnectionStatus = () => {
   const [connectionState, setConnectionState] = useState({

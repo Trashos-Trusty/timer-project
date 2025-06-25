@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import connectionManager from '../utils/ConnectionManager';
+import connectionManager from '../connectionManager';
 
 const useConnectionStatus = () => {
   const [status, setStatus] = useState(() => connectionManager.getStatus());

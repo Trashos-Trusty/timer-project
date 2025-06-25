@@ -9,7 +9,7 @@ import ApiConfigModal from './components/ApiConfigModal';
 import LoadingOverlay from './components/LoadingOverlay';
 import ConnectionStatus from './components/ConnectionStatus';
 import UpdateManager from './components/UpdateManager';
-import connectionManager from './utils/ConnectionManager';
+import connectionManager from './connectionManager';
 import './index.css';
 
 function App() {

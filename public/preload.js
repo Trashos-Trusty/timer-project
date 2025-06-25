@@ -34,6 +34,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('timer-update', callback);
   },
   
+  // Écouteur pour les changements de statut de connexion
+  onConnectionStatusChanged: (callback) => {
+    ipcRenderer.on('connection-status-changed', callback);
+    return () => ipcRenderer.removeListener('connection-status-changed', callback);
+  },
+  
+  // Gestion des erreurs de connexion
+  handleConnectionError: () => ipcRenderer.invoke('handle-connection-error'),
+  forceConnectionCheck: () => ipcRenderer.invoke('force-connection-check'),
+  
   // Configuration API (remplace la configuration FTP)
   getApiConfig: () => ipcRenderer.invoke('get-api-config'),
   setApiConfig: (config) => ipcRenderer.invoke('set-api-config', config),

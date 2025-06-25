@@ -29,7 +29,13 @@ function createWindow() {
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
-      preload: path.join(__dirname, 'preload.js')
+      sandbox: false, // Garder à false pour React
+      preload: path.join(__dirname, 'preload.js'),
+      // Sécurité renforcée
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      safeDialogs: true,
+      safeDialogsMessage: 'Cette application a tenté d\'ouvrir plusieurs boîtes de dialogue'
     },
     titleBarStyle: 'default',
     icon: path.join(__dirname, 'icon.png'),
@@ -40,6 +46,10 @@ function createWindow() {
   const startUrl = isDev 
     ? 'http://localhost:3000' 
     : `file://${path.join(__dirname, '../build/index.html')}`;
+  
+  console.log('🚀 Chargement de l\'URL:', startUrl);
+  console.log('📁 __dirname:', __dirname);
+  console.log('🏗️ isDev:', isDev);
   
   mainWindow.loadURL(startUrl);
   
@@ -68,14 +78,18 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // Initialiser l'UpdateManager après que la fenêtre soit prête
-    if (!isDev) {
-      updateManager = new UpdateManager(mainWindow);
-      updateManager.scheduleInitialCheck();
-      updateManager.schedulePeriodicCheck();
-    }
+    // Initialiser l'UpdateManager (toujours pour les handlers IPC)
+    updateManager = new UpdateManager(mainWindow);
     
-    // Ouvrir les DevTools en mode développement
+    // Désactiver complètement les vérifications automatiques pour éviter les popups
+    // Les utilisateurs peuvent vérifier manuellement s'ils le souhaitent
+    // if (!isDev) {
+    //   updateManager.scheduleInitialCheck();
+    //   updateManager.schedulePeriodicCheck();
+    // }
+    console.log('⚠️ Vérifications automatiques de mise à jour désactivées pour éviter les popups');
+    
+    // Ouvrir les DevTools pour déboguer
     if (isDev) {
       mainWindow.webContents.openDevTools();
     }
@@ -150,7 +164,7 @@ app.whenReady().then(async () => {
   
   try {
     // Créer les instances des gestionnaires
-    configManager = new ConfigManager(); // ConfigManager est une CLASSE, pas une instance
+    configManager = ConfigManager; // ConfigManager est déjà une instance, pas une classe
     apiManager = new ApiManager();
     
     // Charger la configuration
@@ -413,100 +427,4 @@ ipcMain.handle('set-config', async (event, config) => {
   }
 });
 
-// Handlers pour les mises à jour
-ipcMain.handle('check-for-updates', async () => {
-  try {
-    if (isDev) {
-      // En mode développement, simuler une vérification
-      console.log('🔍 Mode développement - Simulation de vérification de mise à jour');
-      if (mainWindow) {
-        mainWindow.webContents.send('update-checking');
-        
-        // Simuler une réponse après 2 secondes
-        setTimeout(() => {
-          mainWindow.webContents.send('update-not-available');
-        }, 2000);
-      }
-      return { success: true, message: 'Vérification simulée en mode développement' };
-    }
-    
-    if (updateManager) {
-      await updateManager.checkForUpdates();
-      return { success: true, message: 'Vérification des mises à jour démarrée' };
-    } else {
-      throw new Error('UpdateManager non initialisé');
-    }
-  } catch (error) {
-    console.error('Erreur lors de la vérification des mises à jour:', error);
-    return { success: false, message: error.message };
-  }
-});
-
-ipcMain.handle('download-update', async () => {
-  try {
-    if (isDev) {
-      console.log('🔽 Mode développement - Simulation de téléchargement');
-      if (mainWindow) {
-        // Simuler un téléchargement progressif
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 10;
-          mainWindow.webContents.send('download-progress', {
-            percent: progress,
-            transferred: progress * 1024 * 1024,
-            total: 100 * 1024 * 1024
-          });
-          
-          if (progress >= 100) {
-            clearInterval(interval);
-            mainWindow.webContents.send('update-downloaded', {
-              version: '1.0.1',
-              releaseDate: new Date().toISOString()
-            });
-          }
-        }, 500);
-      }
-      return { success: true, message: 'Téléchargement simulé en mode développement' };
-    }
-    
-    if (updateManager) {
-      await updateManager.downloadUpdate();
-      return { success: true, message: 'Téléchargement de la mise à jour démarré' };
-    } else {
-      throw new Error('UpdateManager non initialisé');
-    }
-  } catch (error) {
-    console.error('Erreur lors du téléchargement:', error);
-    return { success: false, message: error.message };
-  }
-});
-
-ipcMain.handle('install-update', async () => {
-  try {
-    if (isDev) {
-      console.log('🔧 Mode développement - Simulation d\'installation');
-      return { success: true, message: 'Installation simulée en mode développement' };
-    }
-    
-    if (updateManager) {
-      updateManager.quitAndInstall();
-      return { success: true, message: 'Installation de la mise à jour en cours...' };
-    } else {
-      throw new Error('UpdateManager non initialisé');
-    }
-  } catch (error) {
-    console.error('Erreur lors de l\'installation:', error);
-    return { success: false, message: error.message };
-  }
-});
-
-ipcMain.handle('cancel-update', async () => {
-  try {
-    console.log('❌ Annulation de la mise à jour');
-    // Pas d'action spécifique nécessaire, juste confirmer l'annulation
-    return { success: true, message: 'Mise à jour annulée' };
-  } catch (error) {
-    console.error('Erreur lors de l\'annulation:', error);
-    return { success: false, message: error.message };
-  }
-}); 
+// Les handlers pour les mises à jour sont gérés par UpdateManager dans updateManager.js 

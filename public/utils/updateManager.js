@@ -9,6 +9,9 @@ class UpdateManager {
     this.isCheckingForUpdate = false;
     this.isUpdateAvailable = false;
     this.isUpdateDownloaded = false;
+    this.hasNoReleasesOnGithub = false; // Flag pour désactiver les vérifications auto
+    this.periodicCheckInterval = null; // Référence vers l'interval
+    this.suppressAllPopups = false; // Flag pour supprimer tous les popups d'erreur
     
     this.initializeUpdater();
     this.setupEventListeners();
@@ -16,16 +19,41 @@ class UpdateManager {
   }
 
   initializeUpdater() {
+    // Vérifier si nous sommes en mode développement
+    const isDev = process.env.NODE_ENV === 'development' || process.defaultApp;
+    
+    if (isDev) {
+      console.log('🔄 UpdateManager initialisé (mode développement - auto-updater désactivé)');
+      return;
+    }
+    
+    // DÉSACTIVER COMPLÈTEMENT L'AUTO-UPDATER pour éviter les popups d'erreur
+    // L'utilisateur pourra toujours vérifier manuellement via le menu si nécessaire
+    console.log('🔄 UpdateManager initialisé (auto-updater complètement désactivé pour éviter les popups)');
+    this.suppressAllPopups = true; // Marquer les popups comme supprimés dès le départ
+    this.hasNoReleasesOnGithub = true; // Considérer qu'il n'y a pas de releases
+    
+    // Ne pas initialiser l'auto-updater du tout
+    return;
+    
+    /* Code d'initialisation auto-updater désactivé pour éviter les popups
     // Configuration de l'auto-updater
     autoUpdater.checkForUpdatesAndNotify = false; // On gère manuellement
     autoUpdater.autoDownload = false; // On demande confirmation avant le téléchargement
     autoUpdater.allowPrerelease = false; // Seulement les versions stables
+    autoUpdater.autoInstallOnAppQuit = false; // Pas d'installation automatique
+    
+    // Désactiver les notifications automatiques d'erreur de l'auto-updater
+    if (autoUpdater.fullChangelog !== undefined) {
+      autoUpdater.fullChangelog = false;
+    }
     
     // Configuration des logs (utile pour le debug)
     autoUpdater.logger = require('electron-log');
-    autoUpdater.logger.transports.file.level = 'info';
+    autoUpdater.logger.transports.file.level = 'debug'; // Plus de détails
     
     console.log('🔄 UpdateManager initialisé');
+    */
   }
 
   setupEventListeners() {
@@ -57,9 +85,65 @@ class UpdateManager {
     // Événement : Erreur lors de la vérification
     autoUpdater.on('error', (error) => {
       console.error('❌ Erreur lors de la mise à jour:', error);
+      console.error('❌ Type d\'erreur:', typeof error);
+      console.error('❌ Message d\'erreur:', error.message);
+      console.error('❌ Stack:', error.stack);
+      
       this.isCheckingForUpdate = false;
-      this.sendToRenderer('update-error', error);
-      this.showUpdateErrorDialog(error);
+      
+      // Si les popups sont supprimés, ne rien faire
+      if (this.suppressAllPopups) {
+        console.log('🔇 Popup supprimé - erreur ignorée');
+        return;
+      }
+      
+      // Vérifier si c'est une "erreur" normale (pas de releases sur GitHub)
+      const normalErrors = [
+        'No published version on Github',
+        'latest version not published',
+        'No published version on GitHub',
+        'net::ERR_INTERNET_DISCONNECTED',
+        'net::ERR_NAME_NOT_RESOLVED'
+      ];
+      
+      const errorMessage = error.message || error.toString() || '';
+      const isNormalError = normalErrors.some(normalError => 
+        errorMessage.includes(normalError)
+      );
+      
+      console.log('🔍 Vérification erreur normale:', isNormalError, 'pour message:', errorMessage);
+      
+      if (isNormalError) {
+        console.log('ℹ️ Aucune mise à jour disponible sur GitHub - suppression des futures vérifications');
+        this.hasNoReleasesOnGithub = true; // Marquer qu'il n'y a pas de releases
+        this.suppressAllPopups = true; // Supprimer tous les futurs popups
+        
+        // Arrêter les vérifications périodiques si pas de releases
+        if (this.periodicCheckInterval) {
+          clearInterval(this.periodicCheckInterval);
+          this.periodicCheckInterval = null;
+          console.log('⏹️ Vérifications périodiques désactivées (pas de releases GitHub)');
+        }
+        
+        // Désactiver complètement l'auto-updater pour éviter les vérifications automatiques
+        try {
+          autoUpdater.removeAllListeners('error');
+          autoUpdater.removeAllListeners('checking-for-update');
+          autoUpdater.removeAllListeners('update-available');
+          autoUpdater.removeAllListeners('update-not-available');
+          console.log('🔇 Auto-updater complètement désactivé');
+        } catch (e) {
+          console.log('⚠️ Erreur lors de la désactivation auto-updater:', e.message);
+        }
+        
+        this.sendToRenderer('update-not-available', { version: require('electron').app.getVersion() });
+        // NE PAS afficher de popup du tout pour les erreurs normales
+        return;
+      } else {
+        console.log('❌ Vraie erreur détectée - affichage du popup');
+        this.sendToRenderer('update-error', error);
+        this.showUpdateErrorDialog(error);
+      }
     });
 
     // Événement : Progression du téléchargement
@@ -120,6 +204,52 @@ class UpdateManager {
       if (this.isCheckingForUpdate) {
         console.log('⏳ Vérification déjà en cours...');
         return false;
+      }
+      
+      // Si on sait déjà qu'il n'y a pas de releases GitHub, ne pas vérifier
+      if (this.hasNoReleasesOnGithub) {
+        console.log('⏹️ Vérification annulée: pas de releases GitHub connues');
+        this.sendToRenderer('update-not-available', { 
+          version: require('electron').app.getVersion() 
+        });
+        return false;
+      }
+
+      // Vérifier si nous sommes en mode développement
+      const isDev = process.env.NODE_ENV === 'development' || process.defaultApp;
+      
+      if (isDev) {
+        console.log('🔍 Mode développement: simulation de vérification des mises à jour...');
+        this.isCheckingForUpdate = true;
+        this.sendToRenderer('update-checking');
+        
+        // Simuler une vérification
+        setTimeout(() => {
+          this.isCheckingForUpdate = false;
+          console.log('ℹ️ Mode développement: aucune mise à jour disponible (simulation)');
+          this.sendToRenderer('update-not-available', { 
+            version: require('electron').app.getVersion() 
+          });
+        }, 1000);
+        
+        return true;
+      }
+
+      // En production, si l'auto-updater est désactivé, simuler "pas de mise à jour"
+      if (this.suppressAllPopups) {
+        console.log('ℹ️ Auto-updater désactivé: simulation "pas de mise à jour disponible"');
+        this.isCheckingForUpdate = true;
+        this.sendToRenderer('update-checking');
+        
+        setTimeout(() => {
+          this.isCheckingForUpdate = false;
+          console.log('ℹ️ Simulation: aucune mise à jour disponible');
+          this.sendToRenderer('update-not-available', { 
+            version: require('electron').app.getVersion() 
+          });
+        }, 1000);
+        
+        return true;
       }
 
       console.log('🔍 Vérification manuelle des mises à jour...');
@@ -212,11 +342,48 @@ class UpdateManager {
   }
 
   showUpdateErrorDialog(error) {
+    console.log('🚨 showUpdateErrorDialog appelée avec:', error.message || error.toString());
+    
+    // Si les popups sont supprimés, ne rien afficher
+    if (this.suppressAllPopups) {
+      console.log('🔇 showUpdateErrorDialog: Popup supprimé');
+      return;
+    }
+    
+    // Ne pas afficher de popup pour certaines "erreurs" normales
+    const normalErrors = [
+      'No published version on Github',
+      'No published version on GitHub',
+      'latest version not published',
+      'net::ERR_INTERNET_DISCONNECTED',
+      'net::ERR_NAME_NOT_RESOLVED'
+    ];
+    
+    const errorMessage = error.message || error.toString() || '';
+    const isNormalError = normalErrors.some(normalError => 
+      errorMessage.includes(normalError)
+    );
+    
+    if (isNormalError) {
+      console.log('ℹ️ showUpdateErrorDialog: Erreur normale détectée, aucun popup affiché');
+      
+      // Marquer qu'il n'y a plus de releases disponibles pour éviter les vérifications futures
+      this.hasNoReleasesOnGithub = true;
+      this.suppressAllPopups = true; // Supprimer les futurs popups automatiques
+      
+      // Envoyer un événement "pas de mise à jour" au renderer
+      this.sendToRenderer('update-not-available', { version: require('electron').app.getVersion() });
+      return;
+    }
+    
+    console.log('🚨 showUpdateErrorDialog: Affichage du popup pour vraie erreur:', errorMessage);
+    
+    // Afficher la popup pour les vraies erreurs techniques
     const options = {
       type: 'error',
       title: 'Erreur de mise à jour',
       message: 'Une erreur est survenue lors de la vérification des mises à jour',
-      detail: error.message,
+      detail: errorMessage,
       buttons: ['OK']
     };
 
@@ -237,12 +404,18 @@ class UpdateManager {
     }, 30000); // 30 secondes après le démarrage
   }
 
-  // Vérification périodique (toutes les 6 heures)
+  // Vérification périodique (toutes les 24 heures au lieu de 6 heures)
   schedulePeriodicCheck() {
-    setInterval(() => {
+    this.periodicCheckInterval = setInterval(() => {
+      // Ne pas vérifier si on sait déjà qu'il n'y a pas de releases
+      if (this.hasNoReleasesOnGithub) {
+        console.log('⏹️ Vérification périodique annulée (pas de releases GitHub)');
+        return;
+      }
+      
       console.log('⏰ Vérification périodique des mises à jour');
       this.checkForUpdates();
-    }, 6 * 60 * 60 * 1000); // 6 heures
+    }, 24 * 60 * 60 * 1000); // 24 heures
   }
 }
 
