@@ -620,8 +620,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     const updateLayoutMode = () => {
       const measuredWidth = containerRef.current?.getBoundingClientRect().width;
       const fallbackWidth = typeof window !== 'undefined' ? window.innerWidth : LARGE_SCREEN_BREAKPOINT;
-      const effectiveWidth = measuredWidth && measuredWidth > 0 ? measuredWidth : fallbackWidth;
-      const newIsLargeScreen = effectiveWidth >= LARGE_SCREEN_BREAKPOINT;
+      const newIsLargeScreen = (measuredWidth ?? fallbackWidth) >= LARGE_SCREEN_BREAKPOINT;
 
       setIsLargeScreen(prev => {
         if (prev === newIsLargeScreen) {
@@ -644,7 +643,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     let resizeObserver;
     const element = containerRef.current;
     if (typeof ResizeObserver !== 'undefined' && element) {
-      resizeObserver = new ResizeObserver(() => updateLayoutMode());
+      resizeObserver = new ResizeObserver(updateLayoutMode);
       resizeObserver.observe(element);
     }
 
