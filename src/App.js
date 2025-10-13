@@ -126,7 +126,7 @@ function App() {
     };
     
     initializeApp();
-  }, []);
+  }, [checkApiConfig]);
 
   // Charger les projets quand l'utilisateur est authentifié
   useEffect(() => {

@@ -60,7 +60,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('Erreur lors du démarrage:', error);
     }
-  }, [selectedProject, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions]);
+  }, [selectedProject, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime]);
 
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
@@ -88,10 +88,17 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       // Initialiser les états avec les données du projet
       const projectCurrentTime = selectedProject.currentTime || 0;
-      setCurrentTime(projectCurrentTime);
+      const projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
+      
+      // Le temps affiché doit être le temps accumulé, pas le currentTime du projet
+      // currentTime du projet peut contenir le temps total initial (ex: 10h00)
+      const displayTime = projectAccumulatedTime > 0 ? projectAccumulatedTime : projectCurrentTime;
+      
+      setCurrentTime(displayTime);
       setCurrentSubject(selectedProject.currentSubject || '');
       setSubjectHistory(selectedProject.subjectHistory || []);
       setSessionStartTime(selectedProject.sessionStartTime || null);
+      setAccumulatedSessionTime(projectAccumulatedTime);
       
       // S'assurer que toutes les sessions ont une propriété date correcte
       const sessionsWithDate = (selectedProject.workSessions || []).map(session => {
@@ -119,17 +126,21 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       });
       
       setWorkSessions(sessionsWithDate);
-      setAccumulatedSessionTime(selectedProject.accumulatedSessionTime || 0);
       
       // Reprendre le timer SEULEMENT si le statut est 'running'
       if (selectedProject.status === 'running') {
-        console.log('▶️ Reprise du timer avec temps:', projectCurrentTime);
+        console.log('▶️ Reprise du timer avec temps:', projectCurrentTime, 'temps accumulé:', projectAccumulatedTime);
         setIsRunning(true);
+        // Important : Redémarrer une nouvelle session pour le temps réel
         setCurrentSessionStart(Date.now());
+        // S'assurer que le temps affiché correspond au temps accumulé, pas au temps total du projet
+        setCurrentTime(projectAccumulatedTime);
       } else {
-        console.log('⏸️ Projet en pause/arrêté, temps:', projectCurrentTime);
+        console.log('⏸️ Projet en pause/arrêté, temps:', projectCurrentTime, 'temps accumulé:', projectAccumulatedTime);
         setIsRunning(false);
         setCurrentSessionStart(null);
+        // Afficher le temps accumulé même en pause
+        setCurrentTime(projectAccumulatedTime);
       }
       
     } catch (error) {
@@ -189,19 +200,23 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         connectionManager.handleConnectionError();
       }
     }
-  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime]);
+  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime, accumulatedSessionTime]);
 
   useEffect(() => {
-    if (isRunning && selectedProject) {
+    if (isRunning && selectedProject && currentSessionStart) {
       console.log('⏱️ Démarrage de l\'interval timer pour projet:', selectedProject.name);
       intervalRef.current = setInterval(() => {
-        setCurrentTime(prev => {
-          const newTime = prev + 1;
-          if (newTime % 10 === 0) {
-            updateProjectTime(newTime);
-          }
-          return newTime;
-        });
+        // Calculer le temps réel écoulé depuis le début de la session courante
+        const now = Date.now();
+        const sessionElapsed = Math.floor((now - currentSessionStart) / 1000);
+        const totalTime = accumulatedSessionTime + sessionElapsed;
+        
+        setCurrentTime(totalTime);
+        
+        // Sauvegarder périodiquement (toutes les 10 secondes)
+        if (totalTime % 10 === 0) {
+          updateProjectTime(totalTime);
+        }
       }, 1000);
     } else {
       if (intervalRef.current) {
@@ -218,7 +233,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         intervalRef.current = null;
       }
     };
-  }, [isRunning, selectedProject, updateProjectTime]);
+  }, [isRunning, selectedProject, currentSessionStart, accumulatedSessionTime, updateProjectTime]);
 
   const handleStart = async () => {
     if (!selectedProject || isRunning) return;
@@ -231,7 +246,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       return;
     }
 
-    console.log('▶️ Démarrage/reprise du timer pour:', currentSubject);
+    console.log('▶️ Démarrage/reprise du timer pour:', currentSubject, 'temps accumulé:', accumulatedSessionTime);
     
     // Nettoyer tout timer existant avant de démarrer
     cleanupTimer();
@@ -245,7 +260,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       setSessionStartTime(now);
       console.log('🚀 Première session du projet');
     } else {
-      console.log('▶️ Reprise après pause');
+      console.log('▶️ Reprise après pause, temps déjà accumulé:', accumulatedSessionTime);
     }
     
     await startTimer();
@@ -255,14 +270,16 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     if (!selectedProject || !isRunning) return;
     
     try {
-      // Accumuler le temps de la session en cours au lieu de créer une session
+      let newAccumulatedTime = accumulatedSessionTime;
+      
+      // Accumuler le temps de la session en cours
       if (currentSessionStart) {
         const sessionEnd = Date.now();
         const sessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
+        newAccumulatedTime = accumulatedSessionTime + sessionDuration;
         
-        // Ajouter cette durée au temps accumulé
-        setAccumulatedSessionTime(prev => prev + sessionDuration);
-        console.log(`⏸️ Temps accumulé lors de la pause: ${sessionDuration}s (total accumulé: ${accumulatedSessionTime + sessionDuration}s)`);
+        console.log(`⏸️ Temps session courante: ${sessionDuration}s, temps total accumulé: ${newAccumulatedTime}s`);
+        setAccumulatedSessionTime(newAccumulatedTime);
       }
       
       // Arrêter le timer
@@ -271,13 +288,13 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       const updatedProject = {
         ...selectedProject,
-        currentTime: currentTime,
+        currentTime: newAccumulatedTime, // Le temps total devient le temps accumulé
         status: 'paused',
         currentSubject: currentSubject,
         subjectHistory: subjectHistory,
         sessionStartTime: sessionStartTime,
-        workSessions: workSessions, // Pas de nouvelle session
-        accumulatedSessionTime: accumulatedSessionTime + (currentSessionStart ? Math.floor((Date.now() - currentSessionStart) / 1000) : 0),
+        workSessions: workSessions,
+        accumulatedSessionTime: newAccumulatedTime,
         lastSaved: Date.now()
       };
       
@@ -322,7 +339,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     setShowTimeEdit(false);
   };
 
-  const formatDuration = (seconds) => {
+  const formatDuration = useCallback((seconds) => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
@@ -334,7 +351,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } else {
       return `${secs}s`;
     }
-  };
+  }, []);
 
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
@@ -436,11 +453,12 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     }
   };
 
-  const handleChangeSubject = () => {
-    setSubjectModalType('change');
-    setSubjectInput(currentSubject);
-    setShowSubjectModal(true);
-  };
+  // Fonction supprimée car non utilisée
+  // const handleChangeSubject = () => {
+  //   setSubjectModalType('change');
+  //   setSubjectInput(currentSubject);
+  //   setShowSubjectModal(true);
+  // };
 
   // Fonction pour supprimer une session de travail
   const handleDeleteSession = useCallback(async (sessionToDelete) => {
@@ -541,7 +559,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     setIsDragging(true);
     e.preventDefault();
     
-    const containerRect = containerRef.current.getBoundingClientRect();
+    // containerRect était assigné mais non utilisé, suppression de cette variable
     startXRef.current = e.clientX;
     startWidthRef.current = leftPanelWidth;
     
@@ -729,7 +747,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
     }
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer]);
+  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime]);
 
   // Exposer la fonction saveCurrentSession au composant parent
   useImperativeHandle(ref, () => ({
