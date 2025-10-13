@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperat
 import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2 } from 'lucide-react';
 import connectionManager from '../connectionManager';
 
+const LARGE_SCREEN_BREAKPOINT = 768;
+
 const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled = false, onTimerStateChange }, ref) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
@@ -23,7 +25,12 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const [showAllTodaySessions, setShowAllTodaySessions] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(25); // Pourcentage de largeur pour le panneau de gauche
   const [isDragging, setIsDragging] = useState(false);
-  const [isLargeScreen, setIsLargeScreen] = useState(window.innerWidth >= 1024);
+  const [isLargeScreen, setIsLargeScreen] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    return window.innerWidth >= LARGE_SCREEN_BREAKPOINT;
+  });
   const [lastAutoSave, setLastAutoSave] = useState(null);
   
   const intervalRef = useRef(null);
@@ -610,22 +617,47 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
 
   // Gestion responsive
   useEffect(() => {
-    const handleResize = () => {
-      const newIsLargeScreen = window.innerWidth >= 1024;
-      setIsLargeScreen(newIsLargeScreen);
-      
-      // Sur grand écran, toujours afficher la section "Aujourd'hui"
+    const updateLayoutMode = () => {
+      const measuredWidth = containerRef.current?.getBoundingClientRect().width;
+      const fallbackWidth = typeof window !== 'undefined' ? window.innerWidth : LARGE_SCREEN_BREAKPOINT;
+      const effectiveWidth = measuredWidth && measuredWidth > 0 ? measuredWidth : fallbackWidth;
+      const newIsLargeScreen = effectiveWidth >= LARGE_SCREEN_BREAKPOINT;
+
+      setIsLargeScreen(prev => {
+        if (prev === newIsLargeScreen) {
+          return prev;
+        }
+        return newIsLargeScreen;
+      });
+
       if (newIsLargeScreen) {
         setShowTodaySummary(true);
       }
     };
 
-    // Initialiser au chargement
-    handleResize();
+    updateLayoutMode();
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updateLayoutMode);
+    }
+
+    let resizeObserver;
+    const element = containerRef.current;
+    if (typeof ResizeObserver !== 'undefined' && element) {
+      resizeObserver = new ResizeObserver(() => updateLayoutMode());
+      resizeObserver.observe(element);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', updateLayoutMode);
+      }
+      if (resizeObserver && element) {
+        resizeObserver.unobserve(element);
+        resizeObserver.disconnect();
+      }
+    };
+  }, [selectedProject]);
 
   // Cleanup des refs au démontage
   useEffect(() => {
