@@ -121,8 +121,9 @@ class ApiManager {
         throw new Error(data.message || 'Échec de l\'authentification');
       }
     } catch (error) {
-      console.error('❌ Erreur d\'authentification:', error);
-      throw error;
+      const formattedError = this.formatFetchError(error, 'authentification');
+      console.error('❌ Erreur d\'authentification:', formattedError.originalError);
+      throw formattedError.userFacingError;
     }
   }
 
@@ -144,7 +145,8 @@ class ApiManager {
 
       return response.ok;
     } catch (error) {
-      console.error('❌ Erreur de vérification du token:', error);
+      const formattedError = this.formatFetchError(error, 'vérification du token');
+      console.error('❌ Erreur de vérification du token:', formattedError.originalError);
       return false;
     }
   }
@@ -169,7 +171,8 @@ class ApiManager {
       }
       return false;
     } catch (error) {
-      console.error('❌ Erreur de renouvellement du token:', error);
+      const formattedError = this.formatFetchError(error, 'renouvellement du token');
+      console.error('❌ Erreur de renouvellement du token:', formattedError.originalError);
       return false;
     }
   }
@@ -297,8 +300,16 @@ class ApiManager {
       timeout: this.config.timeout
     };
 
-    const response = await fetch(url, requestOptions);
-    
+    let response;
+
+    try {
+      response = await fetch(url, requestOptions);
+    } catch (error) {
+      const formattedError = this.formatFetchError(error, `requête vers ${endpoint}`);
+      console.error(`❌ Erreur lors de l'appel API (${endpoint}):`, formattedError.originalError);
+      throw formattedError.userFacingError;
+    }
+
     if (!response.ok) {
       if (response.status === 401) {
         throw new Error('Token expiré ou invalide');
@@ -404,7 +415,7 @@ class ApiManager {
   async testConnection() {
     try {
       console.log('🔍 Test de connexion à l\'API...');
-      
+
       const response = await fetch(`${this.config.baseUrl}?action=health`, {
         method: 'GET',
         timeout: this.config.timeout
@@ -418,9 +429,39 @@ class ApiManager {
         throw new Error(`Erreur de connexion: ${response.status}`);
       }
     } catch (error) {
-      console.error('❌ Test de connexion API échoué:', error);
-      throw error;
+      const formattedError = this.formatFetchError(error, 'test de connexion API');
+      console.error('❌ Test de connexion API échoué:', formattedError.originalError);
+      throw formattedError.userFacingError;
     }
+  }
+
+  formatFetchError(error, context) {
+    const defaultMessage = `Une erreur est survenue lors de ${context}.`;
+
+    if (!error || typeof error !== 'object') {
+      return {
+        originalError: error,
+        userFacingError: new Error(defaultMessage)
+      };
+    }
+
+    const cause = error.cause || {};
+    let userMessage = defaultMessage;
+
+    if (cause.code === 'UND_ERR_CONNECT_TIMEOUT') {
+      userMessage = 'La connexion au serveur a expiré. Vérifiez votre connexion internet ou l\'accessibilité du serveur API.';
+    } else if (cause.code === 'UND_ERR_CONNECT') {
+      userMessage = 'Impossible de se connecter au serveur. Vérifiez l\'URL de l\'API et votre connexion réseau.';
+    } else if (cause.code === 'UND_ERR_DNS') {
+      userMessage = 'Le nom de domaine de l\'API est introuvable. Assurez-vous que l\'adresse est correcte.';
+    } else if (error.name === 'AbortError') {
+      userMessage = 'La requête a été annulée avant d\'être terminée. Veuillez réessayer.';
+    }
+
+    return {
+      originalError: error,
+      userFacingError: new Error(userMessage)
+    };
   }
 
   // Nettoyage des ressources
