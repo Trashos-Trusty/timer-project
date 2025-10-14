@@ -20,6 +20,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const [workSessions, setWorkSessions] = useState([]); // Historique des sessions
   const [currentSessionStart, setCurrentSessionStart] = useState(null);
   const [accumulatedSessionTime, setAccumulatedSessionTime] = useState(0); // Temps accumulé avant pause(s)
+  const [baseProjectTime, setBaseProjectTime] = useState(0); // Temps total déjà sauvegardé pour le projet
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [showTodaySummary, setShowTodaySummary] = useState(true);
   const [showAllTodaySessions, setShowAllTodaySessions] = useState(false);
@@ -48,11 +49,13 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const startTimer = useCallback(async () => {
     try {
       setIsRunning(true);
-      
+
+      const totalTime = baseProjectTime + accumulatedSessionTime;
+
       const updatedProject = {
         ...selectedProject,
         status: 'running',
-        currentTime: currentTime,
+        currentTime: totalTime,
         currentSubject: currentSubject,
         sessionStartTime: sessionStartTime,
         subjectHistory: subjectHistory,
@@ -67,7 +70,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('Erreur lors du démarrage:', error);
     }
-  }, [selectedProject, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime]);
+  }, [selectedProject, baseProjectTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime]);
 
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
@@ -81,6 +84,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       setWorkSessions([]);
       setCurrentSessionStart(null);
       setAccumulatedSessionTime(0);
+      setBaseProjectTime(0);
       return;
     }
 
@@ -96,17 +100,15 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       // Initialiser les états avec les données du projet
       const projectCurrentTime = selectedProject.currentTime || 0;
       const projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
-      
-      // Le temps affiché doit être le temps accumulé, pas le currentTime du projet
-      // currentTime du projet peut contenir le temps total initial (ex: 10h00)
-      const displayTime = projectAccumulatedTime > 0 ? projectAccumulatedTime : projectCurrentTime;
-      
-      setCurrentTime(displayTime);
+      const baseTime = Math.max(0, projectCurrentTime - projectAccumulatedTime);
+
+      setBaseProjectTime(baseTime);
+      setCurrentTime(projectCurrentTime);
       setCurrentSubject(selectedProject.currentSubject || '');
       setSubjectHistory(selectedProject.subjectHistory || []);
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
-      
+
       // S'assurer que toutes les sessions ont une propriété date correcte
       const sessionsWithDate = (selectedProject.workSessions || []).map(session => {
         // Si la session n'a pas de propriété date, la calculer depuis startTime
@@ -140,14 +142,12 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         setIsRunning(true);
         // Important : Redémarrer une nouvelle session pour le temps réel
         setCurrentSessionStart(Date.now());
-        // S'assurer que le temps affiché correspond au temps accumulé, pas au temps total du projet
-        setCurrentTime(projectAccumulatedTime);
+        setCurrentTime(projectCurrentTime);
       } else {
         console.log('⏸️ Projet en pause/arrêté, temps:', projectCurrentTime, 'temps accumulé:', projectAccumulatedTime);
         setIsRunning(false);
         setCurrentSessionStart(null);
-        // Afficher le temps accumulé même en pause
-        setCurrentTime(projectAccumulatedTime);
+        setCurrentTime(projectCurrentTime);
       }
       
     } catch (error) {
@@ -183,20 +183,20 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     };
   }, [selectedProject?.id]);
 
-  const updateProjectTime = useCallback(async (time) => {
+  const updateProjectTime = useCallback(async (totalTime, sessionTime = 0) => {
     if (!selectedProject) return;
-    
+
     try {
       const updatedProject = {
         ...selectedProject,
-        currentTime: time,
+        currentTime: totalTime,
         currentSubject: currentSubject,
         subjectHistory: subjectHistory,
         sessionStartTime: sessionStartTime,
-        accumulatedSessionTime: accumulatedSessionTime,
+        accumulatedSessionTime: sessionTime,
         updatedAt: new Date().toISOString()
       };
-      
+
       if (window.electronAPI) {
         await window.electronAPI.saveProject(updatedProject);
       }
@@ -207,7 +207,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         connectionManager.handleConnectionError();
       }
     }
-  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime, accumulatedSessionTime]);
+  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime]);
 
   useEffect(() => {
     if (isRunning && selectedProject && currentSessionStart) {
@@ -216,13 +216,14 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         // Calculer le temps réel écoulé depuis le début de la session courante
         const now = Date.now();
         const sessionElapsed = Math.floor((now - currentSessionStart) / 1000);
-        const totalTime = accumulatedSessionTime + sessionElapsed;
-        
+        const totalSessionTime = accumulatedSessionTime + sessionElapsed;
+        const totalTime = baseProjectTime + totalSessionTime;
+
         setCurrentTime(totalTime);
-        
+
         // Sauvegarder périodiquement (toutes les 10 secondes)
         if (totalTime % 10 === 0) {
-          updateProjectTime(totalTime);
+          updateProjectTime(totalTime, totalSessionTime);
         }
       }, 1000);
     } else {
@@ -240,7 +241,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         intervalRef.current = null;
       }
     };
-  }, [isRunning, selectedProject, currentSessionStart, accumulatedSessionTime, updateProjectTime]);
+  }, [isRunning, selectedProject, currentSessionStart, accumulatedSessionTime, baseProjectTime, updateProjectTime]);
 
   const handleStart = async () => {
     if (!selectedProject || isRunning) return;
@@ -284,18 +285,20 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         const sessionEnd = Date.now();
         const sessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
         newAccumulatedTime = accumulatedSessionTime + sessionDuration;
-        
+
         console.log(`⏸️ Temps session courante: ${sessionDuration}s, temps total accumulé: ${newAccumulatedTime}s`);
         setAccumulatedSessionTime(newAccumulatedTime);
+        setCurrentTime(baseProjectTime + newAccumulatedTime);
       }
-      
+
       // Arrêter le timer
       setIsRunning(false);
       setCurrentSessionStart(null); // Réinitialiser le start de session pour la reprise
-      
+
+      const totalTime = baseProjectTime + newAccumulatedTime;
       const updatedProject = {
         ...selectedProject,
-        currentTime: newAccumulatedTime, // Le temps total devient le temps accumulé
+        currentTime: totalTime,
         status: 'paused',
         currentSubject: currentSubject,
         subjectHistory: subjectHistory,
@@ -304,7 +307,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         accumulatedSessionTime: newAccumulatedTime,
         lastSaved: Date.now()
       };
-      
+
       await window.electronAPI.saveProject(updatedProject);
       
     } catch (error) {
@@ -342,7 +345,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const handleTimeSave = async () => {
     const totalSeconds = (newTime.hours * 3600) + (newTime.minutes * 60) + newTime.seconds;
     setCurrentTime(totalSeconds);
-    await updateProjectTime(totalSeconds);
+    setBaseProjectTime(totalSeconds);
+    setAccumulatedSessionTime(0);
+    await updateProjectTime(totalSeconds, 0);
     setShowTimeEdit(false);
   };
 
@@ -515,11 +520,14 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         await window.electronAPI.saveProject(updatedProject);
         console.log(`✅ Session supprimée et temps mis à jour: ${newCurrentTime}s`);
       }
-      
+
       // Mettre à jour l'état local
       setWorkSessions(updatedWorkSessions);
+      setBaseProjectTime(newCurrentTime);
       setCurrentTime(newCurrentTime);
-      
+      setAccumulatedSessionTime(0);
+      setSessionStartTime(null);
+
     } catch (error) {
       console.error('❌ Erreur lors de la suppression de la session:', error);
     }
@@ -686,15 +694,18 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       // Initialiser les sessions mises à jour
       let updatedWorkSessions = [...workSessions];
       let sessionCreated = false;
-      
+      let totalSessionDuration = 0;
+      let finalTotalTime = baseProjectTime;
+
       // Pour un arrêt manuel, créer une session avec le temps total accumulé
       if (!isAutoSave && isRunning && currentSessionStart) {
         const sessionEnd = Date.now();
         const currentSessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
-        
+
         // Calculer la durée totale : temps accumulé + session actuelle
-        const totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
-        
+        totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
         // Créer une session avec le temps total
         const newSession = {
           id: `session-${Date.now()}`,
@@ -704,21 +715,22 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
           duration: totalSessionDuration,
           date: new Date().toISOString().split('T')[0]
         };
-        
+
         updatedWorkSessions = [...workSessions, newSession];
         sessionCreated = true;
-        
+
         // Réinitialiser le temps accumulé
         setAccumulatedSessionTime(0);
-        
+
         console.log(`⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
       }
       // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
       else if (isAutoSave && (currentSessionStart || accumulatedSessionTime > 0)) {
         const sessionEnd = Date.now();
         const currentSessionDuration = currentSessionStart ? Math.floor((sessionEnd - currentSessionStart) / 1000) : 0;
-        const totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
-        
+        totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
         if (totalSessionDuration > 10) {
           const newSession = {
             id: `session-${Date.now()}`,
@@ -728,33 +740,35 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
             duration: totalSessionDuration,
             date: new Date().toISOString().split('T')[0]
           };
-          
+
           updatedWorkSessions = [...workSessions, newSession];
           sessionCreated = true;
-          
+
           // Réinitialiser le temps accumulé
           setAccumulatedSessionTime(0);
-          
+
           console.log(`💾 Session créée (auto): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
         } else {
           console.log(`⏭️ Session auto trop courte (${totalSessionDuration}s), ignorée`);
         }
       } else if (isAutoSave && currentTime > 0) {
+        finalTotalTime = Math.max(currentTime, baseProjectTime);
         console.log(`💾 Sauvegarde du temps accumulé (${currentTime}s) sans session active`);
       }
-      
+
       // Préparer les données du projet mis à jour
       const updatedProject = {
         ...selectedProject,
-        currentTime: currentTime,
+        currentTime: finalTotalTime,
         status: 'stopped',
         currentSubject: currentSubject,
         subjectHistory: subjectHistory,
-        sessionStartTime: sessionStartTime,
+        sessionStartTime: null,
         workSessions: updatedWorkSessions,
+        accumulatedSessionTime: 0,
         lastSaved: Date.now()
       };
-      
+
       // Sauvegarder le projet
       if (window.electronAPI) {
         await window.electronAPI.saveProject(updatedProject);
@@ -766,7 +780,11 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         setWorkSessions(updatedWorkSessions);
         cleanupTimer();
         setCurrentSessionStart(null);
-        
+        setAccumulatedSessionTime(0);
+        setBaseProjectTime(finalTotalTime);
+        setCurrentTime(finalTotalTime);
+        setSessionStartTime(null);
+
         // Afficher la modal de confirmation seulement si une session a été créée
         if (sessionCreated) {
           setSubjectModalType('stop');
@@ -778,7 +796,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
     }
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime]);
+  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime, baseProjectTime]);
 
   // Exposer la fonction saveCurrentSession au composant parent
   useImperativeHandle(ref, () => ({
@@ -794,7 +812,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       autoSaveInterval = setInterval(async () => {
         try {
           console.log('💾 Sauvegarde automatique périodique...');
-          
+
+          const totalSessionTime = Math.max(0, currentTime - baseProjectTime);
+
           // Sauvegarder l'état actuel sans arrêter le timer
           const updatedProject = {
             ...selectedProject,
@@ -804,6 +824,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
             subjectHistory: subjectHistory,
             sessionStartTime: sessionStartTime,
             workSessions: workSessions,
+            accumulatedSessionTime: totalSessionTime,
             lastSaved: Date.now()
           };
           
@@ -831,20 +852,26 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       if (selectedProject && isRunning && currentSessionStart) {
         console.log('🚨 Fermeture fenêtre détectée');
         // Utiliser navigator.sendBeacon pour une sauvegarde fiable
+        const sessionEnd = Date.now();
+        const currentSegmentDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
+        const totalSessionTime = accumulatedSessionTime + currentSegmentDuration;
+        const finalTotalTime = baseProjectTime + totalSessionTime;
+
         const projectData = {
           ...selectedProject,
-          currentTime: currentTime,
+          currentTime: finalTotalTime,
           status: 'stopped',
           currentSubject: currentSubject,
-          sessionStartTime: sessionStartTime,
+          sessionStartTime: null,
           workSessions: [...workSessions, {
             id: `session-${Date.now()}`,
             subject: currentSubject,
             startTime: new Date(currentSessionStart || sessionStartTime).toISOString(),
-            endTime: new Date().toISOString(),
-            duration: Math.floor((Date.now() - currentSessionStart) / 1000),
+            endTime: new Date(sessionEnd).toISOString(),
+            duration: totalSessionTime,
             date: new Date().toISOString().split('T')[0]
           }],
+          accumulatedSessionTime: 0,
           lastSaved: Date.now()
         };
         
@@ -875,7 +902,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       window.removeEventListener('unload', handleWindowClose);
       window.removeEventListener('pagehide', handleWindowClose);
     };
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession]);
+  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession, baseProjectTime, accumulatedSessionTime]);
 
   if (!selectedProject) {
     return (
