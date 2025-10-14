@@ -10,12 +10,17 @@ class ApiManager {
       token: null,
       freelanceId: null
     };
-    
+
     // Système de queue pour éviter les conflits de concurrence
     this.operationQueue = [];
     this.isProcessingQueue = false;
-    
+
     this.tempDir = path.join(os.tmpdir(), 'timer-project-temp');
+
+    // Gestion du throttling d'authentification pour éviter les blocages serveur
+    this.lastAuthAttempt = 0;
+    this.authCooldownMs = 10_000; // Intervalle minimum entre deux tentatives
+    this.authLockedUntil = null;
   }
 
   // Configuration de l'API
@@ -26,11 +31,27 @@ class ApiManager {
   // Authentification et récupération du token
   async authenticate(credentials) {
     try {
+      const now = Date.now();
+
+      // Empêcher de réessayer si le serveur a renvoyé un 429 récemment
+      if (this.authLockedUntil && now < this.authLockedUntil) {
+        const remainingSeconds = Math.ceil((this.authLockedUntil - now) / 1000);
+        throw new Error(`Trop de tentatives de connexion. Veuillez patienter ${remainingSeconds} seconde(s) avant de réessayer.`);
+      }
+
+      // Appliquer un temps minimum entre deux tentatives pour éviter les rafales
+      if (now - this.lastAuthAttempt < this.authCooldownMs) {
+        const waitSeconds = Math.ceil((this.authCooldownMs - (now - this.lastAuthAttempt)) / 1000);
+        throw new Error(`Tentatives de connexion trop rapprochées. Réessayez dans ${waitSeconds} seconde(s).`);
+      }
+
+      this.lastAuthAttempt = now;
+
       const url = `${this.config.baseUrl}?action=login`;
       console.log('🔍 DEBUG - URL d\'authentification:', url);
       console.log('🔍 DEBUG - Config baseUrl:', this.config.baseUrl);
       console.log('🔍 DEBUG - Credentials:', { username: credentials.username, password: '***' });
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -46,23 +67,56 @@ class ApiManager {
       console.log('🔍 DEBUG - Response status:', response.status);
       console.log('🔍 DEBUG - Response headers:', Object.fromEntries(response.headers.entries()));
 
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('Retry-After');
+        const fallbackDelayMs = 120_000; // 2 minutes par défaut si aucune indication
+        let retryAfterMs = fallbackDelayMs;
+
+        if (retryAfterHeader) {
+          const parsedSeconds = parseInt(retryAfterHeader, 10);
+
+          if (!Number.isNaN(parsedSeconds)) {
+            retryAfterMs = parsedSeconds * 1000;
+          } else {
+            const retryDate = Date.parse(retryAfterHeader);
+            if (!Number.isNaN(retryDate)) {
+              retryAfterMs = Math.max(retryDate - Date.now(), this.authCooldownMs);
+            }
+          }
+        }
+
+        this.authLockedUntil = Date.now() + Math.max(retryAfterMs, this.authCooldownMs);
+
+        console.warn('⚠️ Authentification suspendue suite à un code 429. Prochaine tentative possible après:', new Date(this.authLockedUntil).toISOString());
+
+        throw new Error('Le serveur a temporairement bloqué les connexions suite à de trop nombreuses tentatives. Merci de réessayer un peu plus tard.');
+      }
+
       if (!response.ok) {
         const responseText = await response.text();
-        console.log('🔍 DEBUG - Response text:', responseText);
+        console.log('🔍 DEBUG - Response text:', responseText.substring(0, 500));
         throw new Error(`Erreur d'authentification: ${response.status}`);
       }
 
       const data = await response.json();
-      
+
       if (data.success && data.token) {
         this.config.token = data.token;
         this.config.freelanceId = data.freelance_id;
-        
+
+        // Réinitialiser le blocage éventuel après une authentification réussie
+        this.authLockedUntil = null;
+
         // Sauvegarder le token localement (chiffré)
         await this.saveTokenLocally(data.token, data.freelance_id);
-        
+
         console.log('✅ Authentification réussie');
-        return { success: true, token: data.token, freelanceId: data.freelance_id };
+        return {
+          success: true,
+          token: data.token,
+          freelanceId: data.freelance_id,
+          freelanceInfo: data.freelance || null
+        };
       } else {
         throw new Error(data.message || 'Échec de l\'authentification');
       }
