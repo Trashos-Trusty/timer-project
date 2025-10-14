@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import ProjectList from './components/ProjectList';
 import Timer from './components/Timer';
@@ -68,7 +68,7 @@ function App() {
   };
 
   // Vérifier la configuration API et l'authentification
-  const checkApiConfig = async () => {
+  const checkApiConfig = useCallback(async () => {
     try {
       console.log('🔧 Vérification de la configuration API...');
       if (window.electronAPI) {
@@ -102,7 +102,7 @@ function App() {
         setShowApiModal(true);
       }
     }
-  };
+  }, [isApiConfigured]);
 
   // Initialisation au démarrage
   useEffect(() => {
