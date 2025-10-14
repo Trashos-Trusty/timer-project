@@ -46,6 +46,18 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     setCurrentSessionStart(null);
   }, []);
 
+  const persistProject = useCallback(async (projectData) => {
+    try {
+      if (window.electronAPI) {
+        await window.electronAPI.saveProject(projectData);
+      }
+    } finally {
+      if (onProjectUpdate) {
+        onProjectUpdate(projectData);
+      }
+    }
+  }, [onProjectUpdate]);
+
   const startTimer = useCallback(async () => {
     try {
       setIsRunning(true);
@@ -64,13 +76,11 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         lastSaved: Date.now()
       };
       
-      if (window.electronAPI) {
-        await window.electronAPI.saveProject(updatedProject);
-      }
+      await persistProject(updatedProject);
     } catch (error) {
       console.error('Erreur lors du démarrage:', error);
     }
-  }, [selectedProject, baseProjectTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime]);
+  }, [selectedProject, baseProjectTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime, persistProject]);
 
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
@@ -197,9 +207,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         updatedAt: new Date().toISOString()
       };
 
-      if (window.electronAPI) {
-        await window.electronAPI.saveProject(updatedProject);
-      }
+      await persistProject(updatedProject);
     } catch (error) {
       console.error('Erreur lors de la mise à jour du projet:', error);
       // Notifier le gestionnaire de connexion en cas d'erreur
@@ -207,7 +215,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         connectionManager.handleConnectionError();
       }
     }
-  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime]);
+  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime, persistProject]);
 
   useEffect(() => {
     if (isRunning && selectedProject && currentSessionStart) {
@@ -308,7 +316,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         lastSaved: Date.now()
       };
 
-      await window.electronAPI.saveProject(updatedProject);
+      await persistProject(updatedProject);
       
     } catch (error) {
       console.error('Erreur lors de la pause:', error);
@@ -516,10 +524,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       };
 
       // Sauvegarder le projet
-      if (window.electronAPI) {
-        await window.electronAPI.saveProject(updatedProject);
-        console.log(`✅ Session supprimée et temps mis à jour: ${newCurrentTime}s`);
-      }
+      await persistProject(updatedProject);
+      console.log(`✅ Session supprimée et temps mis à jour: ${newCurrentTime}s`);
 
       // Mettre à jour l'état local
       setWorkSessions(updatedWorkSessions);
@@ -531,7 +537,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('❌ Erreur lors de la suppression de la session:', error);
     }
-  }, [selectedProject, workSessions, currentTime, formatDuration]);
+  }, [selectedProject, workSessions, currentTime, formatDuration, persistProject]);
 
   // Calculer la taille du timer en fonction de la largeur du panneau
   const getTimerSize = () => {
@@ -770,10 +776,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       };
 
       // Sauvegarder le projet
-      if (window.electronAPI) {
-        await window.electronAPI.saveProject(updatedProject);
-        console.log('✅ Session sauvegardée avec succès');
-      }
+      await persistProject(updatedProject);
+      console.log('✅ Session sauvegardée avec succès');
       
       // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
       if (!isAutoSave) {
@@ -796,7 +800,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
     }
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime, baseProjectTime]);
+  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime, baseProjectTime, persistProject]);
 
   // Exposer la fonction saveCurrentSession au composant parent
   useImperativeHandle(ref, () => ({
@@ -828,11 +832,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
             lastSaved: Date.now()
           };
           
-          if (window.electronAPI) {
-            await window.electronAPI.saveProject(updatedProject);
-            setLastAutoSave(new Date());
-            console.log('✅ Sauvegarde auto périodique réussie');
-          }
+          await persistProject(updatedProject);
+          setLastAutoSave(new Date());
+          console.log('✅ Sauvegarde auto périodique réussie');
         } catch (error) {
           console.error('❌ Erreur sauvegarde auto périodique:', error);
         }
@@ -876,13 +878,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         };
         
         // Tentative de sauvegarde rapide
-        if (window.electronAPI) {
-          try {
-            window.electronAPI.saveProject(projectData);
-          } catch (error) {
-            console.error('❌ Erreur sauvegarde fermeture:', error);
-          }
-        }
+        persistProject(projectData).catch((error) => {
+          console.error('❌ Erreur sauvegarde fermeture:', error);
+        });
       }
     };
 
@@ -902,7 +900,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       window.removeEventListener('unload', handleWindowClose);
       window.removeEventListener('pagehide', handleWindowClose);
     };
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession, baseProjectTime, accumulatedSessionTime]);
+  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession, baseProjectTime, accumulatedSessionTime, persistProject]);
 
   if (!selectedProject) {
     return (

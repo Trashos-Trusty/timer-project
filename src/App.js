@@ -345,6 +345,36 @@ function App() {
     setSelectedProject(project);
   };
 
+  const handleProjectUpdate = useCallback((updatedProject) => {
+    if (!updatedProject || !updatedProject.id) {
+      return;
+    }
+
+    setProjects((prevProjects) => {
+      let found = false;
+      const updatedProjects = prevProjects.map((project) => {
+        if (project.id === updatedProject.id) {
+          found = true;
+          return { ...project, ...updatedProject };
+        }
+        return project;
+      });
+
+      if (!found) {
+        return [...prevProjects, updatedProject];
+      }
+
+      return updatedProjects;
+    });
+
+    setSelectedProject((prevSelected) => {
+      if (prevSelected?.id === updatedProject.id) {
+        return { ...prevSelected, ...updatedProject };
+      }
+      return prevSelected;
+    });
+  }, []);
+
   const handleApiConfigSave = async () => {
     setIsApiConfigured(true);
     setIsAuthenticated(true);
@@ -426,9 +456,10 @@ function App() {
         {/* Zone principale */}
         <div className="flex-1 flex flex-col">
           {currentView === 'timer' ? (
-            <Timer 
+            <Timer
               ref={timerRef}
               selectedProject={selectedProject}
+              onProjectUpdate={handleProjectUpdate}
               disabled={isSaving}
               onTimerStateChange={setIsTimerRunning}
             />
