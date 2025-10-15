@@ -66,11 +66,15 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
 
       const totalTime = baseProjectTime + accumulatedSessionTime;
 
+      const currentSubjectClean = currentSubject ? currentSubject.trim() : '';
+      const activeSubjectClean = activeSessionSubjectRef.current ? activeSessionSubjectRef.current.trim() : '';
+      const subjectToPersist = currentSubjectClean || activeSubjectClean;
+
       const updatedProject = {
         ...selectedProject,
         status: 'running',
         currentTime: totalTime,
-        currentSubject: currentSubject,
+        currentSubject: subjectToPersist,
         sessionStartTime: sessionStartTime,
         subjectHistory: subjectHistory,
         workSessions: workSessions,
