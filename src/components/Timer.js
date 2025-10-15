@@ -16,6 +16,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const [subjectModalType, setSubjectModalType] = useState('start'); // 'start', 'stop', 'change'
   const [subjectInput, setSubjectInput] = useState('');
   const [subjectHistory, setSubjectHistory] = useState([]);
+  const [pendingConfirmationSubject, setPendingConfirmationSubject] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [workSessions, setWorkSessions] = useState([]); // Historique des sessions
   const [currentSessionStart, setCurrentSessionStart] = useState(null);
@@ -35,6 +36,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const [lastAutoSave, setLastAutoSave] = useState(null);
   
   const intervalRef = useRef(null);
+  const activeSessionSubjectRef = useRef('');
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -89,7 +91,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       setCurrentTime(0);
       setIsRunning(false);
       setCurrentSubject('');
+      activeSessionSubjectRef.current = '';
       setSubjectHistory([]);
+      setPendingConfirmationSubject('');
       setSessionStartTime(null);
       setWorkSessions([]);
       setCurrentSessionStart(null);
@@ -114,7 +118,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
 
       setBaseProjectTime(baseTime);
       setCurrentTime(projectCurrentTime);
-      setCurrentSubject(selectedProject.currentSubject || '');
+      const initialSubject = selectedProject.currentSubject || '';
+      setCurrentSubject(initialSubject);
+      activeSessionSubjectRef.current = initialSubject;
+      setPendingConfirmationSubject('');
       setSubjectHistory(selectedProject.subjectHistory || []);
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
@@ -258,6 +265,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     if (!currentSubject || currentSubject.trim() === '') {
       setSubjectModalType('start');
       setSubjectInput('');
+      setPendingConfirmationSubject('');
       setShowSubjectModal(true);
       return;
     }
@@ -336,6 +344,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     cleanupTimer();
     setCurrentTime(selectedProject?.currentTime || 0);
     setCurrentSubject('');
+    activeSessionSubjectRef.current = '';
+    setPendingConfirmationSubject('');
     setCurrentSessionStart(null);
     setSessionStartTime(null);
     setAccumulatedSessionTime(0);
@@ -392,6 +402,13 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     return Math.max(selectedProject.totalTime - currentTime, 0);
   };
 
+  const confirmationSubject =
+    (pendingConfirmationSubject && pendingConfirmationSubject.trim()) ||
+    (subjectInput && subjectInput.trim()) ||
+    currentSubject ||
+    activeSessionSubjectRef.current ||
+    'Travail général';
+
   const handleSubjectSubmit = async () => {
     const newSubject = subjectInput.trim();
     if (!newSubject) return;
@@ -399,6 +416,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     if (subjectModalType === 'start') {
       // Modal de démarrage
       setCurrentSubject(newSubject);
+      activeSessionSubjectRef.current = newSubject;
       setCurrentSessionStart(Date.now());
       setSessionStartTime(Date.now());
       
@@ -409,8 +427,9 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       setShowSubjectModal(false);
       setSubjectInput('');
+      setPendingConfirmationSubject('');
       await startTimer();
-      
+
     } else if (subjectModalType === 'stop') {
       // Modal de confirmation/modification
       if (newSubject !== currentSubject) {
@@ -422,9 +441,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
           }
           return updated;
         });
-        
+
         setCurrentSubject(newSubject);
-        
+        activeSessionSubjectRef.current = newSubject;
+
         // Ajouter à l'historique si nouveau
         if (!subjectHistory.includes(newSubject)) {
           setSubjectHistory(prev => [newSubject, ...prev.slice(0, 4)]);
@@ -432,15 +452,17 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       }
       
       console.log('✅ Tâche validée, temps conservé:', currentTime);
-      
+
       // Réinitialiser seulement les états de session, PAS le temps total
       setCurrentSubject('');
+      activeSessionSubjectRef.current = '';
       setCurrentSessionStart(null);
       setSessionStartTime(null);
       
       setShowSubjectModal(false);
       setSubjectInput('');
-      
+      setPendingConfirmationSubject('');
+
     } else if (subjectModalType === 'change') {
       // Changement de sujet en cours de session
       const now = Date.now();
@@ -461,6 +483,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       // Démarrer la nouvelle session
       setCurrentSubject(newSubject);
+      activeSessionSubjectRef.current = newSubject;
       setCurrentSessionStart(now);
       
       // Ajouter à l'historique si nouveau
@@ -470,6 +493,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       setShowSubjectModal(false);
       setSubjectInput('');
+      setPendingConfirmationSubject('');
     }
   };
 
@@ -702,6 +726,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       let sessionCreated = false;
       let totalSessionDuration = 0;
       let finalTotalTime = baseProjectTime;
+      const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
+      let sessionSubjectForModal = effectiveSubject || 'Travail général';
 
       // Pour un arrêt manuel, créer une session avec le temps total accumulé
       if (!isAutoSave && isRunning && currentSessionStart) {
@@ -713,9 +739,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         finalTotalTime = baseProjectTime + totalSessionDuration;
 
         // Créer une session avec le temps total
+        const sessionSubject = effectiveSubject || 'Travail général';
         const newSession = {
           id: `session-${Date.now()}`,
-          subject: currentSubject || 'Travail général',
+          subject: sessionSubject,
           startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
           endTime: new Date(sessionEnd).toISOString(),
           duration: totalSessionDuration,
@@ -724,6 +751,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
 
         updatedWorkSessions = [...workSessions, newSession];
         sessionCreated = true;
+        sessionSubjectForModal = sessionSubject;
+        activeSessionSubjectRef.current = sessionSubject;
 
         // Réinitialiser le temps accumulé
         setAccumulatedSessionTime(0);
@@ -738,9 +767,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         finalTotalTime = baseProjectTime + totalSessionDuration;
 
         if (totalSessionDuration > 10) {
+          const sessionSubject = effectiveSubject || 'Travail général';
           const newSession = {
             id: `session-${Date.now()}`,
-            subject: currentSubject || 'Travail général',
+            subject: sessionSubject,
             startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
             endTime: new Date(sessionEnd).toISOString(),
             duration: totalSessionDuration,
@@ -749,6 +779,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
 
           updatedWorkSessions = [...workSessions, newSession];
           sessionCreated = true;
+          sessionSubjectForModal = sessionSubject;
+          activeSessionSubjectRef.current = sessionSubject;
 
           // Réinitialiser le temps accumulé
           setAccumulatedSessionTime(0);
@@ -792,7 +824,8 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         // Afficher la modal de confirmation seulement si une session a été créée
         if (sessionCreated) {
           setSubjectModalType('stop');
-          setSubjectInput(currentSubject);
+          setPendingConfirmationSubject(sessionSubjectForModal);
+          setSubjectInput(sessionSubjectForModal);
           setShowSubjectModal(true);
         }
       }
@@ -1448,9 +1481,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
                 <p className="text-sm text-gray-600 mb-4 text-center">
                   Vous avez travaillé sur :
                   {' '}
-                  <strong>
-                    "{(subjectInput && subjectInput.trim()) || currentSubject || 'Travail général'}"
-                  </strong>
+                  <strong>{`"${confirmationSubject}"`}</strong>
                   <br />
                   Confirmez ou modifiez si vous avez aussi travaillé sur autre chose
                 </p>
@@ -1502,7 +1533,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
             {/* Actions */}
             <div className="flex justify-end space-x-3 mt-6">
               <button
-                onClick={() => setShowSubjectModal(false)}
+                onClick={() => {
+                  setShowSubjectModal(false);
+                  setPendingConfirmationSubject('');
+                }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
               >
                 Annuler
