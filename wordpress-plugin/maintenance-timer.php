@@ -536,7 +536,7 @@ class MaintenanceTimerClientPlugin {
                     <span style="font-weight: bold; color: #666;"><?php echo number_format($progress_percent, 1); ?>% <?php _e('utilisé', 'maintenance-timer-client'); ?></span>
                 </div>
                 <div style="width: 100%; height: 25px; background: #e0e0e0; border-radius: 12px; overflow: hidden;">
-                    <div style="width: <?php echo min(100, $progress_percent); ?>%; height: 100%; background: linear-gradient(90deg, #00a32a, #4dc34d); transition: width 0.5s ease; position: relative;">
+                    <div class="maintenance-progress-fill" data-progress="<?php echo min(100, $progress_percent); ?>" style="width: <?php echo min(100, $progress_percent); ?>%; height: 100%; background: linear-gradient(90deg, #00a32a, #4dc34d); transition: width 0.5s ease; position: relative;">
                         <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); animation: shimmer 2s infinite;"></div>
                     </div>
                 </div>
@@ -819,7 +819,7 @@ class MaintenanceTimerClientPlugin {
                 <span><?php echo number_format($progress_percent, 1); ?>% <?php _e('utilisé', 'maintenance-timer-client'); ?></span>
             </div>
             <div style="width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden;">
-                <div style="width: <?php echo min(100, $progress_percent); ?>%; height: 100%; background: linear-gradient(90deg, #00a32a, #4dc34d); transition: width 0.5s ease;"></div>
+                <div class="maintenance-progress-fill" data-progress="<?php echo min(100, $progress_percent); ?>" style="width: <?php echo min(100, $progress_percent); ?>%; height: 100%; background: linear-gradient(90deg, #00a32a, #4dc34d); transition: width 0.5s ease;"></div>
             </div>
         </div>
         

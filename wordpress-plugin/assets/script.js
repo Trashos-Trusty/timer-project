@@ -168,19 +168,23 @@ jQuery(document).ready(function($) {
      * Amélioration visuelle des barres de progression
      */
     function animateProgressBars() {
-        $('div[style*="background: linear-gradient(90deg, #00a32a, #4dc34d)"]').each(function() {
+        $('.maintenance-progress-fill').each(function() {
             const $bar = $(this);
-            const width = $bar.css('width');
-            
+            const targetWidth = parseFloat($bar.data('progress'));
+
+            if (isNaN(targetWidth)) {
+                return;
+            }
+
             // Animation d'entrée
             $bar.css('width', '0%').animate({
-                width: width
-            }, 1000, 'easeOutCubic');
+                width: `${targetWidth}%`
+            }, 1000, 'swing');
         });
     }
-    
+
     // Lancer l'animation des barres de progression au chargement
-    if ($('div[style*="background: linear-gradient(90deg, #00a32a, #4dc34d)"]').length) {
+    if ($('.maintenance-progress-fill').length) {
         setTimeout(animateProgressBars, 500);
     }
     
