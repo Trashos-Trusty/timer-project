@@ -121,7 +121,6 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       const initialSubject = selectedProject.currentSubject || '';
       setCurrentSubject(initialSubject);
       activeSessionSubjectRef.current = initialSubject;
-      setPendingConfirmationSubject('');
       setSubjectHistory(selectedProject.subjectHistory || []);
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
@@ -345,7 +344,6 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     setCurrentTime(selectedProject?.currentTime || 0);
     setCurrentSubject('');
     activeSessionSubjectRef.current = '';
-    setPendingConfirmationSubject('');
     setCurrentSessionStart(null);
     setSessionStartTime(null);
     setAccumulatedSessionTime(0);
@@ -402,12 +400,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     return Math.max(selectedProject.totalTime - currentTime, 0);
   };
 
-  const confirmationSubject =
-    (pendingConfirmationSubject && pendingConfirmationSubject.trim()) ||
-    (subjectInput && subjectInput.trim()) ||
-    currentSubject ||
-    activeSessionSubjectRef.current ||
-    'Travail général';
+  const confirmationSubject = (subjectInput && subjectInput.trim()) || currentSubject || activeSessionSubjectRef.current || 'Travail général';
 
   const handleSubjectSubmit = async () => {
     const newSubject = subjectInput.trim();
@@ -824,7 +817,6 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         // Afficher la modal de confirmation seulement si une session a été créée
         if (sessionCreated) {
           setSubjectModalType('stop');
-          setPendingConfirmationSubject(sessionSubjectForModal);
           setSubjectInput(sessionSubjectForModal);
           setShowSubjectModal(true);
         }
