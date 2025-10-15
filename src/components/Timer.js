@@ -16,6 +16,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
   const [subjectModalType, setSubjectModalType] = useState('start'); // 'start', 'stop', 'change'
   const [subjectInput, setSubjectInput] = useState('');
   const [subjectHistory, setSubjectHistory] = useState([]);
+  const [pendingConfirmationSubject, setPendingConfirmationSubject] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const [workSessions, setWorkSessions] = useState([]); // Historique des sessions
   const [currentSessionStart, setCurrentSessionStart] = useState(null);
@@ -262,6 +263,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     if (!currentSubject || currentSubject.trim() === '') {
       setSubjectModalType('start');
       setSubjectInput('');
+      setPendingConfirmationSubject('');
       setShowSubjectModal(true);
       return;
     }
@@ -397,7 +399,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     return Math.max(selectedProject.totalTime - currentTime, 0);
   };
 
-  const confirmationSubject = (subjectInput && subjectInput.trim()) || currentSubject || activeSessionSubjectRef.current || 'Travail général';
+  const confirmationSubject = (subjectInput && subjectInput.trim()) || pendingConfirmationSubject || currentSubject || activeSessionSubjectRef.current || 'Travail général';
 
   const handleSubjectSubmit = async () => {
     const newSubject = subjectInput.trim();
@@ -417,6 +419,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       setShowSubjectModal(false);
       setSubjectInput('');
+      setPendingConfirmationSubject('');
       await startTimer();
       
     } else if (subjectModalType === 'stop') {
@@ -450,12 +453,13 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       
       setShowSubjectModal(false);
       setSubjectInput('');
+      setPendingConfirmationSubject('');
       
     } else if (subjectModalType === 'change') {
       // Changement de sujet en cours de session
       const now = Date.now();
       const sessionDuration = currentSessionStart ? Math.floor((now - currentSessionStart) / 1000) : 0;
-      
+
       // Créer une session pour l'ancien sujet
       if (currentSubject && sessionDuration > 0) {
         const oldSession = {
@@ -468,19 +472,20 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         };
         setWorkSessions(prev => [...prev, oldSession]);
       }
-      
+
       // Démarrer la nouvelle session
       setCurrentSubject(newSubject);
       activeSessionSubjectRef.current = newSubject;
       setCurrentSessionStart(now);
-      
+
       // Ajouter à l'historique si nouveau
       if (!subjectHistory.includes(newSubject)) {
         setSubjectHistory(prev => [newSubject, ...prev.slice(0, 4)]);
       }
-      
+
       setShowSubjectModal(false);
       setSubjectInput('');
+      setPendingConfirmationSubject('');
     }
   };
 
@@ -811,6 +816,7 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
         // Afficher la modal de confirmation seulement si une session a été créée
         if (sessionCreated) {
           setSubjectModalType('stop');
+          setPendingConfirmationSubject(sessionSubjectForModal);
           setSubjectInput(sessionSubjectForModal);
           setShowSubjectModal(true);
         }
@@ -1519,7 +1525,10 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
             {/* Actions */}
             <div className="flex justify-end space-x-3 mt-6">
               <button
-                onClick={() => setShowSubjectModal(false)}
+                onClick={() => {
+                  setShowSubjectModal(false);
+                  setPendingConfirmationSubject('');
+                }}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
               >
                 Annuler
