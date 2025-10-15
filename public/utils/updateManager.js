@@ -26,34 +26,23 @@ class UpdateManager {
       console.log('🔄 UpdateManager initialisé (mode développement - auto-updater désactivé)');
       return;
     }
-    
-    // DÉSACTIVER COMPLÈTEMENT L'AUTO-UPDATER pour éviter les popups d'erreur
-    // L'utilisateur pourra toujours vérifier manuellement via le menu si nécessaire
-    console.log('🔄 UpdateManager initialisé (auto-updater complètement désactivé pour éviter les popups)');
-    this.suppressAllPopups = true; // Marquer les popups comme supprimés dès le départ
-    this.hasNoReleasesOnGithub = true; // Considérer qu'il n'y a pas de releases
-    
-    // Ne pas initialiser l'auto-updater du tout
-    return;
-    
-    /* Code d'initialisation auto-updater désactivé pour éviter les popups
+
     // Configuration de l'auto-updater
     autoUpdater.checkForUpdatesAndNotify = false; // On gère manuellement
     autoUpdater.autoDownload = false; // On demande confirmation avant le téléchargement
     autoUpdater.allowPrerelease = false; // Seulement les versions stables
     autoUpdater.autoInstallOnAppQuit = false; // Pas d'installation automatique
-    
+
     // Désactiver les notifications automatiques d'erreur de l'auto-updater
     if (autoUpdater.fullChangelog !== undefined) {
       autoUpdater.fullChangelog = false;
     }
-    
+
     // Configuration des logs (utile pour le debug)
     autoUpdater.logger = require('electron-log');
     autoUpdater.logger.transports.file.level = 'debug'; // Plus de détails
-    
+
     console.log('🔄 UpdateManager initialisé');
-    */
   }
 
   setupEventListeners() {
@@ -206,18 +195,9 @@ class UpdateManager {
         return false;
       }
       
-      // Si on sait déjà qu'il n'y a pas de releases GitHub, ne pas vérifier
-      if (this.hasNoReleasesOnGithub) {
-        console.log('⏹️ Vérification annulée: pas de releases GitHub connues');
-        this.sendToRenderer('update-not-available', { 
-          version: require('electron').app.getVersion() 
-        });
-        return false;
-      }
-
       // Vérifier si nous sommes en mode développement
       const isDev = process.env.NODE_ENV === 'development' || process.defaultApp;
-      
+
       if (isDev) {
         console.log('🔍 Mode développement: simulation de vérification des mises à jour...');
         this.isCheckingForUpdate = true;
@@ -227,23 +207,6 @@ class UpdateManager {
         setTimeout(() => {
           this.isCheckingForUpdate = false;
           console.log('ℹ️ Mode développement: aucune mise à jour disponible (simulation)');
-          this.sendToRenderer('update-not-available', { 
-            version: require('electron').app.getVersion() 
-          });
-        }, 1000);
-        
-        return true;
-      }
-
-      // En production, si l'auto-updater est désactivé, simuler "pas de mise à jour"
-      if (this.suppressAllPopups) {
-        console.log('ℹ️ Auto-updater désactivé: simulation "pas de mise à jour disponible"');
-        this.isCheckingForUpdate = true;
-        this.sendToRenderer('update-checking');
-        
-        setTimeout(() => {
-          this.isCheckingForUpdate = false;
-          console.log('ℹ️ Simulation: aucune mise à jour disponible');
           this.sendToRenderer('update-not-available', { 
             version: require('electron').app.getVersion() 
           });
