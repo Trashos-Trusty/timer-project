@@ -1446,7 +1446,11 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
                   Confirmez votre travail
                 </h3>
                 <p className="text-sm text-gray-600 mb-4 text-center">
-                  Vous avez travaillé sur : <strong>"{currentSubject}"</strong>
+                  Vous avez travaillé sur :
+                  {' '}
+                  <strong>
+                    "{(subjectInput && subjectInput.trim()) || currentSubject || 'Travail général'}"
+                  </strong>
                   <br />
                   Confirmez ou modifiez si vous avez aussi travaillé sur autre chose
                 </p>
