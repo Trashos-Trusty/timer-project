@@ -92,11 +92,24 @@ class MaintenanceTimerClientPlugin {
     public function admin_init() {
         register_setting('maintenance_timer_settings', 'maintenance_timer_project_name');
         register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_username');
-        register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_password');
+        register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_password', array(
+            'sanitize_callback' => array($this, 'sanitize_password_option')
+        ));
         register_setting('maintenance_timer_settings', 'maintenance_timer_auto_sync');
     }
-    
+
+    public function sanitize_password_option($password) {
+        $password = trim($password);
+
+        if ($password === '') {
+            return get_option('maintenance_timer_freelance_password');
+        }
+
+        return $password;
+    }
+
     public function admin_page() {
+        $saved_password = get_option('maintenance_timer_freelance_password');
         ?>
         <div class="wrap">
             <h1><?php _e('Configuration Maintenance de votre Site', 'maintenance-timer-client'); ?></h1>
@@ -130,9 +143,10 @@ class MaintenanceTimerClientPlugin {
                     <tr>
                         <th scope="row"><?php _e('Mot de passe API', 'maintenance-timer-client'); ?></th>
                         <td>
-                            <input type="password" name="maintenance_timer_freelance_password" 
-                                   value="<?php echo esc_attr(get_option('maintenance_timer_freelance_password')); ?>" 
-                                   class="regular-text" />
+                            <input type="password" name="maintenance_timer_freelance_password"
+                                   value=""
+                                   placeholder="<?php echo esc_attr($saved_password ? __('•••••••• (déjà configuré)', 'maintenance-timer-client') : ''); ?>"
+                                   class="regular-text" autocomplete="new-password" />
                             <p class="description"><?php _e('Fourni par votre développeur', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
