@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Download, X, AlertCircle, CheckCircle, Info, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, X, AlertCircle, CheckCircle, Info, RefreshCw, Loader2 } from 'lucide-react';
 
 const UpdateManager = () => {
   const [updateStatus, setUpdateStatus] = useState({
@@ -13,6 +13,7 @@ const UpdateManager = () => {
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
   const [notification, setNotification] = useState({ type: '', message: '', details: '' });
   const [pendingUpdateCount, setPendingUpdateCount] = useState(0);
+  const notificationTimeoutRef = useRef(null);
 
   const resolvePendingUpdateCount = (info) => {
     if (info) {
@@ -55,16 +56,18 @@ const UpdateManager = () => {
     }
 
     if (window.electronAPI.onUpdateAvailable) {
-      cleanupFunctions.push(window.electronAPI.onUpdateAvailable((info) => {
+      cleanupFunctions.push(window.electronAPI.onUpdateAvailable((_, info) => {
         console.log('✅ Mise à jour disponible:', info);
         setUpdateStatus(prev => ({
           ...prev,
           isCheckingForUpdate: false,
           isUpdateAvailable: true,
+          isUpdateDownloaded: false,
           updateInfo: info
         }));
         setShowUpdateNotification(true);
         setPendingUpdateCount(resolvePendingUpdateCount(info));
+        setDownloadProgress(null);
         showNotification('success', 'Mise à jour disponible !', `Version ${info.version} disponible`);
       }));
     }
@@ -72,14 +75,22 @@ const UpdateManager = () => {
     if (window.electronAPI.onUpdateNotAvailable) {
       cleanupFunctions.push(window.electronAPI.onUpdateNotAvailable(() => {
         console.log('ℹ️ Aucune mise à jour disponible');
-        setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
+        setUpdateStatus(prev => ({
+          ...prev,
+          isCheckingForUpdate: false,
+          isUpdateAvailable: false,
+          isUpdateDownloaded: false,
+          updateInfo: null
+        }));
+        setShowUpdateNotification(false);
         setPendingUpdateCount(0);
+        setDownloadProgress(null);
         showNotification('info', 'Aucune mise à jour disponible', 'Vous avez déjà la dernière version');
       }));
     }
 
     if (window.electronAPI.onUpdateDownloaded) {
-      cleanupFunctions.push(window.electronAPI.onUpdateDownloaded((info) => {
+      cleanupFunctions.push(window.electronAPI.onUpdateDownloaded((_, info) => {
         console.log('⬇️ Mise à jour téléchargée:', info);
         setUpdateStatus(prev => ({ ...prev, isUpdateDownloaded: true }));
         setDownloadProgress(null);
@@ -89,14 +100,21 @@ const UpdateManager = () => {
     }
 
     if (window.electronAPI.onDownloadProgress) {
-      cleanupFunctions.push(window.electronAPI.onDownloadProgress((progress) => {
+      cleanupFunctions.push(window.electronAPI.onDownloadProgress((_, progress) => {
         console.log('📥 Progression:', progress);
-        setDownloadProgress(progress);
+        if (progress && typeof progress === 'object') {
+          setDownloadProgress({
+            percent: progress.percent ?? 0,
+            transferred: progress.transferred ?? 0,
+            total: progress.total ?? 0,
+            bytesPerSecond: progress.bytesPerSecond ?? 0
+          });
+        }
       }));
     }
 
     if (window.electronAPI.onUpdateError) {
-      cleanupFunctions.push(window.electronAPI.onUpdateError((error) => {
+      cleanupFunctions.push(window.electronAPI.onUpdateError((_, error) => {
         console.error('❌ Erreur de mise à jour:', error);
         setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
         setDownloadProgress(null);
@@ -111,9 +129,23 @@ const UpdateManager = () => {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const showNotification = (type, message, details) => {
     setNotification({ type, message, details });
-    setTimeout(() => setNotification({ type: '', message: '', details: '' }), 5000);
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification({ type: '', message: '', details: '' });
+      notificationTimeoutRef.current = null;
+    }, 5000);
   };
 
   const handleCheckForUpdates = async () => {
@@ -137,9 +169,9 @@ const UpdateManager = () => {
       showNotification('info', 'Téléchargement', 'Fonctionnalité pas encore implémentée');
       return;
     }
-    
+
     try {
-      setDownloadProgress(0);
+      setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
       await window.electronAPI.downloadUpdate();
       showNotification('info', 'Téléchargement démarré...', '');
     } catch (error) {
@@ -165,13 +197,15 @@ const UpdateManager = () => {
   const handleCancelUpdate = async () => {
     if (!window.electronAPI?.cancelUpdate) {
       setShowUpdateNotification(false);
+      setDownloadProgress(null);
       return;
     }
-    
+
     try {
       await window.electronAPI.cancelUpdate();
       setShowUpdateNotification(false);
       setPendingUpdateCount(0);
+      setDownloadProgress(null);
     } catch (error) {
       showNotification('error', 'Erreur', error.message);
     }
@@ -283,14 +317,14 @@ const UpdateManager = () => {
             )}
 
             {/* Barre de progression du téléchargement */}
-            {downloadProgress && (
+            {downloadProgress !== null && (
               <div className="mb-4">
                 <div className="flex justify-between text-sm text-gray-600 mb-2">
                   <span>Téléchargement en cours...</span>
                   <span>{Math.round(downloadProgress.percent || 0)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${downloadProgress.percent || 0}%` }}
                   ></div>
@@ -299,6 +333,12 @@ const UpdateManager = () => {
                   <span>{formatBytes(downloadProgress.transferred || 0)}</span>
                   <span>{formatBytes(downloadProgress.total || 0)}</span>
                 </div>
+                {downloadProgress.percent === 0 && (
+                  <div className="mt-3 flex items-center text-sm text-gray-600">
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Préparation du téléchargement...
+                  </div>
+                )}
               </div>
             )}
 
@@ -307,10 +347,10 @@ const UpdateManager = () => {
                 <>
                   <button
                     onClick={handleDownloadUpdate}
-                    disabled={!!downloadProgress}
+                    disabled={downloadProgress !== null}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-2 px-4 rounded-lg font-medium transition-colors"
                   >
-                    {downloadProgress ? 'Téléchargement...' : 'Télécharger'}
+                    {downloadProgress !== null ? 'Téléchargement...' : 'Télécharger'}
                   </button>
                   <button
                     onClick={handleCancelUpdate}

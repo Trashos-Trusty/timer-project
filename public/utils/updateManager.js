@@ -1,5 +1,5 @@
 const { autoUpdater } = require('electron-updater');
-const { dialog, shell } = require('electron');
+const { dialog } = require('electron');
 const { ipcMain } = require('electron');
 
 class UpdateManager {
@@ -60,7 +60,6 @@ class UpdateManager {
       this.isCheckingForUpdate = false;
       this.isUpdateAvailable = true;
       this.sendToRenderer('update-available', info);
-      this.showUpdateAvailableDialog(info);
     });
 
     // Événement : Pas de mise à jour
@@ -140,7 +139,7 @@ class UpdateManager {
       let logMessage = `📥 Téléchargement: ${Math.round(progressObj.percent)}%`;
       logMessage += ` (${Math.round(progressObj.bytesPerSecond / 1024)} Ko/s)`;
       console.log(logMessage);
-      this.sendToRenderer('update-download-progress', progressObj);
+      this.sendToRenderer('download-progress', progressObj);
     });
 
     // Événement : Téléchargement terminé
@@ -148,7 +147,6 @@ class UpdateManager {
       console.log('✅ Mise à jour téléchargée:', info.version);
       this.isUpdateDownloaded = true;
       this.sendToRenderer('update-downloaded', info);
-      this.showUpdateReadyDialog(info);
     });
   }
 
@@ -254,54 +252,6 @@ class UpdateManager {
       console.error('❌ Erreur lors de l\'installation:', error);
       return false;
     }
-  }
-
-  showUpdateAvailableDialog(info) {
-    const options = {
-      type: 'info',
-      title: 'Mise à jour disponible',
-      message: `Une nouvelle version (${info.version}) est disponible !`,
-      detail: `Version actuelle : ${require('electron').app.getVersion()}\nNouvelle version : ${info.version}\n\n${info.releaseNotes || 'Améliorations et corrections de bugs.'}`,
-      buttons: ['Télécharger maintenant', 'Plus tard', 'Voir les détails'],
-      defaultId: 0,
-      cancelId: 1
-    };
-
-    dialog.showMessageBox(this.mainWindow, options).then((result) => {
-      switch (result.response) {
-        case 0: // Télécharger maintenant
-          this.downloadUpdate();
-          break;
-        case 1: // Plus tard
-          console.log('📅 Mise à jour reportée');
-          break;
-        case 2: // Voir les détails
-          if (info.releaseNotesUrl) {
-            shell.openExternal(info.releaseNotesUrl);
-          }
-          break;
-      }
-    });
-  }
-
-  showUpdateReadyDialog(info) {
-    const options = {
-      type: 'info',
-      title: 'Mise à jour prête',
-      message: `La mise à jour vers la version ${info.version} est prête !`,
-      detail: 'L\'application va redémarrer pour appliquer la mise à jour.',
-      buttons: ['Redémarrer maintenant', 'Plus tard'],
-      defaultId: 0,
-      cancelId: 1
-    };
-
-    dialog.showMessageBox(this.mainWindow, options).then((result) => {
-      if (result.response === 0) {
-        this.installUpdate();
-      } else {
-        console.log('📅 Installation reportée');
-      }
-    });
   }
 
   showUpdateErrorDialog(error) {
