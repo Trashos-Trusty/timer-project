@@ -1,6 +1,6 @@
 {
   "name": "timer-project",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "description": "Application de minuteur de projet avec Electron et React",
   "author": "Enguerran Chaulier <enguerran@trustystudio.fr>",
   "main": "public/electron.js",

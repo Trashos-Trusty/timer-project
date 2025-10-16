@@ -12,6 +12,29 @@ const UpdateManager = () => {
   const [downloadProgress, setDownloadProgress] = useState(null);
   const [showUpdateNotification, setShowUpdateNotification] = useState(false);
   const [notification, setNotification] = useState({ type: '', message: '', details: '' });
+  const [pendingUpdateCount, setPendingUpdateCount] = useState(0);
+
+  const resolvePendingUpdateCount = (info) => {
+    if (info) {
+      if (typeof info.pendingUpdateCount === 'number' && info.pendingUpdateCount > 0) {
+        return info.pendingUpdateCount;
+      }
+
+      if (Array.isArray(info.releaseNotes) && info.releaseNotes.length > 0) {
+        const versionsWithNotes = info.releaseNotes
+          .map(note => (typeof note === 'string' ? note : note?.version))
+          .filter(Boolean);
+
+        if (versionsWithNotes.length > 0) {
+          return versionsWithNotes.length;
+        }
+
+        return info.releaseNotes.length;
+      }
+    }
+
+    return 1;
+  };
 
   useEffect(() => {
     // Vérifier si nous sommes dans l'environnement Electron
@@ -41,6 +64,7 @@ const UpdateManager = () => {
           updateInfo: info
         }));
         setShowUpdateNotification(true);
+        setPendingUpdateCount(resolvePendingUpdateCount(info));
         showNotification('success', 'Mise à jour disponible !', `Version ${info.version} disponible`);
       }));
     }
@@ -49,6 +73,7 @@ const UpdateManager = () => {
       cleanupFunctions.push(window.electronAPI.onUpdateNotAvailable(() => {
         console.log('ℹ️ Aucune mise à jour disponible');
         setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
+        setPendingUpdateCount(0);
         showNotification('info', 'Aucune mise à jour disponible', 'Vous avez déjà la dernière version');
       }));
     }
@@ -58,6 +83,7 @@ const UpdateManager = () => {
         console.log('⬇️ Mise à jour téléchargée:', info);
         setUpdateStatus(prev => ({ ...prev, isUpdateDownloaded: true }));
         setDownloadProgress(null);
+        setPendingUpdateCount(prev => (prev > 0 ? prev : resolvePendingUpdateCount(info)));
         showNotification('success', 'Mise à jour prête !', 'Cliquez pour installer et redémarrer');
       }));
     }
@@ -74,6 +100,7 @@ const UpdateManager = () => {
         console.error('❌ Erreur de mise à jour:', error);
         setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
         setDownloadProgress(null);
+        setPendingUpdateCount(0);
         showNotification('error', 'Erreur de mise à jour', error.message || 'Une erreur est survenue');
       }));
     }
@@ -126,9 +153,10 @@ const UpdateManager = () => {
       showNotification('info', 'Installation', 'Fonctionnalité pas encore implémentée');
       return;
     }
-    
+
     try {
       await window.electronAPI.installUpdate();
+      setPendingUpdateCount(0);
     } catch (error) {
       showNotification('error', 'Erreur', error.message);
     }
@@ -143,6 +171,7 @@ const UpdateManager = () => {
     try {
       await window.electronAPI.cancelUpdate();
       setShowUpdateNotification(false);
+      setPendingUpdateCount(0);
     } catch (error) {
       showNotification('error', 'Erreur', error.message);
     }
@@ -158,6 +187,9 @@ const UpdateManager = () => {
   if (!window.electronAPI) {
     return null;
   }
+
+  const shouldShowBadge = pendingUpdateCount > 0;
+  const badgeContent = pendingUpdateCount > 9 ? '9+' : pendingUpdateCount;
 
   return (
     <div className="update-manager">
@@ -197,10 +229,15 @@ const UpdateManager = () => {
         <button
           onClick={handleCheckForUpdates}
           disabled={updateStatus.isCheckingForUpdate}
-          className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors flex items-center space-x-2"
+          className="relative bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors flex items-center justify-center"
           title="Vérifier les mises à jour"
         >
           <RefreshCw className={`w-5 h-5 ${updateStatus.isCheckingForUpdate ? 'animate-spin' : ''}`} />
+          {shouldShowBadge && (
+            <span className="absolute -top-1 -right-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-xs font-bold text-white shadow">
+              {badgeContent}
+            </span>
+          )}
         </button>
       </div>
 
