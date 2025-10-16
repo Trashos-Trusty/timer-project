@@ -130,6 +130,60 @@ const UpdateManager = () => {
   }, []);
 
   useEffect(() => {
+    if (!window.electronAPI) {
+      return;
+    }
+
+    const initializeStatus = async () => {
+      if (!window.electronAPI?.getUpdateStatus) {
+        return;
+      }
+
+      try {
+        const status = await window.electronAPI.getUpdateStatus();
+
+        if (status) {
+          setUpdateStatus({
+            isCheckingForUpdate: Boolean(status.isCheckingForUpdate),
+            isUpdateAvailable: Boolean(status.isUpdateAvailable),
+            isUpdateDownloaded: Boolean(status.isUpdateDownloaded),
+            updateInfo: status.updateInfo || null
+          });
+
+          const hasPendingUpdate = Boolean(
+            status.updateInfo && (status.isUpdateAvailable || status.isUpdateDownloaded)
+          );
+
+          setPendingUpdateCount(hasPendingUpdate ? resolvePendingUpdateCount(status.updateInfo) : 0);
+          setShowUpdateNotification(hasPendingUpdate);
+        }
+      } catch (error) {
+        console.error('⚠️ Impossible de récupérer le statut des mises à jour:', error);
+      }
+    };
+
+    initializeStatus();
+
+    if (!window.electronAPI?.checkForUpdates) {
+      return undefined;
+    }
+
+    const scheduleAutomaticCheck = () => {
+      window.electronAPI
+        .checkForUpdates()
+        .catch(error => console.error('⚠️ Vérification automatique des mises à jour échouée:', error));
+    };
+
+    const initialTimeout = setTimeout(scheduleAutomaticCheck, 2000);
+    const periodicInterval = setInterval(scheduleAutomaticCheck, 24 * 60 * 60 * 1000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(periodicInterval);
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (notificationTimeoutRef.current) {
         clearTimeout(notificationTimeoutRef.current);
@@ -224,6 +278,7 @@ const UpdateManager = () => {
 
   const shouldShowBadge = pendingUpdateCount > 0;
   const badgeContent = pendingUpdateCount > 9 ? '9+' : pendingUpdateCount;
+  const formattedReleaseNotes = formatReleaseNotes(updateStatus.updateInfo?.releaseNotes);
 
   return (
     <div className="update-manager">
@@ -305,11 +360,11 @@ const UpdateManager = () => {
                   }
                 </p>
                 
-                {updateStatus.updateInfo.releaseNotes && (
+                {formattedReleaseNotes && (
                   <div className="bg-gray-50 p-3 rounded-lg mb-4">
                     <p className="text-sm text-gray-600 font-medium mb-2">Notes de version :</p>
-                    <p className="text-sm text-gray-700">
-                      {updateStatus.updateInfo.releaseNotes}
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {formattedReleaseNotes}
                     </p>
                   </div>
                 )}
@@ -402,4 +457,82 @@ const formatBytes = (bytes, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 };
 
-export default UpdateManager; 
+const replaceHtmlLineBreaks = (text) => {
+  const safeText = typeof text === 'string' ? text : '';
+  return safeText
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/p\s*>/gi, '\n\n')
+    .replace(/<\s*\/li\s*>/gi, '\n')
+    .replace(/<\s*\/h[1-6]\s*>/gi, '\n');
+};
+
+const stripHtmlTags = (text) => (typeof text === 'string' ? text.replace(/<[^>]*>/g, '') : '');
+
+const decodeHtmlEntities = (text) => {
+  if (typeof text !== 'string') {
+    return text || '';
+  }
+
+  if (typeof window === 'undefined' || typeof window.DOMParser !== 'function') {
+    return text;
+  }
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/html');
+    return doc.documentElement.textContent || '';
+  } catch (error) {
+    console.warn('⚠️ Impossible de décoder les entités HTML:', error);
+    return text;
+  }
+};
+
+const extractNoteText = (note) => {
+  if (!note) {
+    return '';
+  }
+
+  if (typeof note === 'string') {
+    return note;
+  }
+
+  if (typeof note === 'object') {
+    const versionLabel = note.version ? `Version ${note.version}` : '';
+    const rawText = note.note || note.body || '';
+    const combined = [versionLabel, rawText].filter(Boolean).join('\n');
+    return combined;
+  }
+
+  return '';
+};
+
+const sanitizeReleaseNote = (note) => {
+  const noteText = extractNoteText(note);
+  if (!noteText) {
+    return '';
+  }
+
+  const withBreaks = replaceHtmlLineBreaks(noteText);
+  const withoutTags = stripHtmlTags(withBreaks);
+  return decodeHtmlEntities(withoutTags)
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const formatReleaseNotes = (releaseNotes) => {
+  if (!releaseNotes) {
+    return '';
+  }
+
+  const notesArray = Array.isArray(releaseNotes) ? releaseNotes : [releaseNotes];
+
+  const sanitizedNotes = notesArray
+    .map(sanitizeReleaseNote)
+    .filter(note => note && note.trim().length > 0);
+
+  return sanitizedNotes.join('\n\n');
+};
+
+export default UpdateManager;
