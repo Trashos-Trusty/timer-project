@@ -19,7 +19,8 @@ const Header = ({
   // Fonction pour télécharger le plugin WordPress
   const handleDownloadPlugin = () => {
     // URL sécurisée vers le plugin - à adapter selon votre hébergement
-    const pluginUrl = process.env.REACT_APP_PLUGIN_DOWNLOAD_URL || '/wordpress-plugin/plugin.zip';
+    const pluginUrl =
+      process.env.REACT_APP_PLUGIN_DOWNLOAD_URL || 'https://trusty-projet.fr/plugin/plugin.zip';
     
     // Créer un élément de téléchargement temporaire
     const link = document.createElement('a');
