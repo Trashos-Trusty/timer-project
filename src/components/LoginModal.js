@@ -1,35 +1,149 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, Lock, Zap, ExternalLink } from 'lucide-react';
+
+const CREDENTIALS_STORAGE_KEY = 'timer-project.remembered-credentials';
+
+const hasBrowserStorage = () => typeof window !== 'undefined' && !!window.localStorage;
+
+const loadRememberedCredentials = () => {
+  if (!hasBrowserStorage()) {
+    return null;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(CREDENTIALS_STORAGE_KEY);
+    if (!stored) {
+      return null;
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    return {
+      username: parsed.username || '',
+      password: parsed.password || '',
+      rememberMe: parsed.rememberMe !== false
+    };
+  } catch (error) {
+    console.error('❌ Erreur lors du chargement des identifiants mémorisés:', error);
+    return null;
+  }
+};
+
+const persistRememberedCredentials = (credentials) => {
+  if (!hasBrowserStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      CREDENTIALS_STORAGE_KEY,
+      JSON.stringify({
+        username: credentials.username,
+        password: credentials.password,
+        rememberMe: true,
+        savedAt: Date.now()
+      })
+    );
+  } catch (error) {
+    console.error('❌ Erreur lors de la sauvegarde des identifiants:', error);
+  }
+};
+
+const clearRememberedCredentials = () => {
+  if (!hasBrowserStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(CREDENTIALS_STORAGE_KEY);
+  } catch (error) {
+    console.error('❌ Erreur lors de la suppression des identifiants mémorisés:', error);
+  }
+};
 
 const LoginModal = ({ onLogin }) => {
   const [credentials, setCredentials] = useState({
     username: '',
-    password: ''
+    password: '',
+    rememberMe: false
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [hasAutoLoginAttempted, setHasAutoLoginAttempted] = useState(true);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  useEffect(() => {
+    const storedCredentials = loadRememberedCredentials();
+    if (storedCredentials) {
+      setCredentials((prev) => ({
+        ...prev,
+        ...storedCredentials
+      }));
+      setHasAutoLoginAttempted(false);
+    }
+  }, []);
+
+  const attemptLogin = useCallback(async (creds, shouldRemember, { silent = false } = {}) => {
+    if (!silent) {
+      setError('');
+    }
+
     setIsLoading(true);
 
     try {
-      const success = await onLogin(credentials);
-      if (!success) {
+      const loginPayload = {
+        username: creds.username,
+        password: creds.password
+      };
+      const success = await onLogin(loginPayload);
+
+      if (success) {
+        if (shouldRemember) {
+          persistRememberedCredentials(loginPayload);
+        } else {
+          clearRememberedCredentials();
+        }
+        return true;
+      }
+
+      if (!silent) {
         setError('Identifiants incorrects');
       }
+      return false;
     } catch (err) {
-      setError('Erreur de connexion');
+      if (!silent) {
+        setError('Erreur de connexion');
+      }
+      return false;
     } finally {
       setIsLoading(false);
     }
+  }, [onLogin]);
+
+  useEffect(() => {
+    if (
+      !hasAutoLoginAttempted &&
+      credentials.rememberMe &&
+      credentials.username &&
+      credentials.password
+    ) {
+      setHasAutoLoginAttempted(true);
+      attemptLogin(credentials, true);
+    }
+  }, [attemptLogin, credentials, hasAutoLoginAttempted]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await attemptLogin(credentials, credentials.rememberMe);
   };
 
   const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
     setCredentials({
       ...credentials,
-      [e.target.name]: e.target.value
+      [name]: type === 'checkbox' ? checked : value
     });
   };
 
@@ -106,6 +220,21 @@ const LoginModal = ({ onLogin }) => {
                 required
               />
             </div>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="rememberMe"
+              name="rememberMe"
+              checked={credentials.rememberMe}
+              onChange={handleChange}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              disabled={isLoading}
+            />
+            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
+              Se souvenir de moi
+            </label>
           </div>
 
           <button
