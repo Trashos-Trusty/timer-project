@@ -72,7 +72,6 @@ const LoginModal = ({ onLogin }) => {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [hasAutoLoginAttempted, setHasAutoLoginAttempted] = useState(true);
 
   useEffect(() => {
     const storedCredentials = loadRememberedCredentials();
@@ -81,7 +80,6 @@ const LoginModal = ({ onLogin }) => {
         ...prev,
         ...storedCredentials
       }));
-      setHasAutoLoginAttempted(false);
     }
   }, []);
 
@@ -121,18 +119,6 @@ const LoginModal = ({ onLogin }) => {
       setIsLoading(false);
     }
   }, [onLogin]);
-
-  useEffect(() => {
-    if (
-      !hasAutoLoginAttempted &&
-      credentials.rememberMe &&
-      credentials.username &&
-      credentials.password
-    ) {
-      setHasAutoLoginAttempted(true);
-      attemptLogin(credentials, true);
-    }
-  }, [attemptLogin, credentials, hasAutoLoginAttempted]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
