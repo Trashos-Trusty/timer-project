@@ -106,6 +106,8 @@ class ApiManager {
 
         // Réinitialiser le blocage éventuel après une authentification réussie
         this.authLockedUntil = null;
+        // Autoriser immédiatement une nouvelle connexion après un succès
+        this.lastAuthAttempt = 0;
 
         // Sauvegarder le token localement (chiffré)
         await this.saveTokenLocally(data.token, data.freelance_id);
