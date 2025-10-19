@@ -399,15 +399,35 @@ ipcMain.handle('clear-token', async () => {
     // Effacer le token de l'API Manager
     apiManager.config.token = null;
     apiManager.config.freelanceId = null;
-    
+
     // Effacer le token local sauvegardé
     await apiManager.clearTokenLocally();
-    
+
     console.log('✅ Token effacé');
     return true;
   } catch (error) {
     console.error('Erreur lors de l\'effacement du token:', error);
     return false;
+  }
+});
+
+// Feedback utilisateur pendant la bêta
+ipcMain.handle('send-feedback', async (event, feedbackData) => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      throw new Error('Configuration API requise pour envoyer un feedback');
+    }
+
+    if (!apiManager) {
+      throw new Error('Gestionnaire API indisponible');
+    }
+
+    const result = await apiManager.sendFeedback(feedbackData);
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('Erreur lors de l\'envoi du feedback:', error);
+    return { success: false, message: error.message };
   }
 });
 

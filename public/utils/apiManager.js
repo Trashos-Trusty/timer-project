@@ -391,6 +391,41 @@ class ApiManager {
     }, 'deleteProject');
   }
 
+  // Envoyer un feedback utilisateur durant la bêta
+  async sendFeedback(feedback) {
+    return this.queueOperation(async () => {
+      console.log('📝 Envoi d\'un feedback:', {
+        type: feedback?.type || 'bug',
+        hasMessage: !!feedback?.message,
+        freelanceId: this.config.freelanceId
+      });
+
+      const payload = {
+        type: feedback?.type || 'bug',
+        message: feedback?.message || '',
+        email: feedback?.email || '',
+        freelance_id: this.config.freelanceId,
+        app_version: feedback?.appVersion || null,
+        freelance_name: feedback?.freelanceName || null,
+        freelance_email: feedback?.freelanceEmail || feedback?.email || null,
+        current_view: feedback?.currentView || null,
+        sent_at: feedback?.sentAt || new Date().toISOString()
+      };
+
+      const response = await this.makeSecureRequest('feedback', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      if (response.success) {
+        console.log('✅ Feedback envoyé avec succès');
+        return response.data || true;
+      }
+
+      throw new Error(response.message || 'Erreur lors de l\'envoi du feedback');
+    }, 'sendFeedback');
+  }
+
   // Synchroniser les logs d'un projet
   async syncProjectLogs(projectId, logs) {
     return this.queueOperation(async () => {

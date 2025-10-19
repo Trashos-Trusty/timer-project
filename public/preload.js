@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hasValidToken: () => ipcRenderer.invoke('has-valid-token'),
   getFreelanceInfo: () => ipcRenderer.invoke('get-freelance-info'),
   clearToken: () => ipcRenderer.invoke('clear-token'),
+
+  // Feedback utilisateur
+  sendFeedback: (feedback) => ipcRenderer.invoke('send-feedback', feedback),
   
   // Configuration générale
   getConfig: () => ipcRenderer.invoke('get-config'),
