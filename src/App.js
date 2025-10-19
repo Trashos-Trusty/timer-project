@@ -9,8 +9,11 @@ import ApiConfigModal from './components/ApiConfigModal';
 import LoadingOverlay from './components/LoadingOverlay';
 import ConnectionStatus from './components/ConnectionStatus';
 import UpdateManager from './components/UpdateManager';
+import OnboardingModal from './components/OnboardingModal';
 import connectionManager from './connectionManager';
 import './index.css';
+
+const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -26,9 +29,20 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
+
+  const markOnboardingAsSeen = useCallback((status = 'acknowledged') => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEY, status);
+      }
+    } catch (error) {
+      console.warn('Impossible de persister l\'état de l\'onboarding :', error);
+    }
+  }, []);
 
   // Charger les projets
   const loadProjects = async () => {
@@ -136,6 +150,26 @@ function App() {
     } else {
       // Vider la liste des projets si l'utilisateur n'est pas authentifié
       setProjects([]);
+      setShowOnboarding(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    try {
+      const hasSeenOnboarding = typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage.getItem(ONBOARDING_STORAGE_KEY)
+        : null;
+
+      if (!hasSeenOnboarding) {
+        setShowOnboarding(true);
+      }
+    } catch (error) {
+      console.warn('Impossible de lire l\'état de l\'onboarding :', error);
+      setShowOnboarding(true);
     }
   }, [isAuthenticated]);
 
@@ -488,9 +522,18 @@ function App() {
         onSave={handleApiConfigSave}
       />
 
+      {showOnboarding && (
+        <OnboardingModal
+          onComplete={(dontShowAgain) => {
+            markOnboardingAsSeen(dontShowAgain ? 'hidden' : 'acknowledged');
+            setShowOnboarding(false);
+          }}
+        />
+      )}
+
       {/* Overlay de chargement */}
-      <LoadingOverlay 
-        isVisible={isSaving} 
+      <LoadingOverlay
+        isVisible={isSaving}
         message={editingProject ? "Mise à jour du projet..." : "Création du projet..."}
       />
 
