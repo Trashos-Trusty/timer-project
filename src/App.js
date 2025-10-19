@@ -10,10 +10,12 @@ import LoadingOverlay from './components/LoadingOverlay';
 import ConnectionStatus from './components/ConnectionStatus';
 import UpdateManager from './components/UpdateManager';
 import OnboardingModal from './components/OnboardingModal';
+import FeedbackModal from './components/FeedbackModal';
 import connectionManager from './connectionManager';
 import './index.css';
 
 const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
+const FEEDBACK_FALLBACK_EMAIL = 'enguerran@trustystudio.fr';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -30,6 +32,7 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
@@ -431,7 +434,7 @@ function App() {
 
   const handleRefresh = async () => {
     if (isRefreshing || isSaving) return;
-    
+
     setIsRefreshing(true);
     try {
       await loadProjects();
@@ -451,18 +454,64 @@ function App() {
     setShowApiModal(true);
   };
 
+  const handleOpenFeedback = () => {
+    setShowFeedbackModal(true);
+  };
+
+  const handleSubmitFeedback = async (feedbackData) => {
+    if (!window?.electronAPI?.sendFeedback) {
+      throw new Error(
+        `La collecte de feedback n'est pas disponible. Vous pouvez nous écrire à ${FEEDBACK_FALLBACK_EMAIL}.`
+      );
+    }
+
+    try {
+      const appVersion = window?.electronAPI?.getAppVersion
+        ? await window.electronAPI.getAppVersion()
+        : null;
+
+      const result = await window.electronAPI.sendFeedback({
+        ...feedbackData,
+        appVersion: appVersion || null,
+        freelanceId: freelanceInfo?.id || null,
+        freelanceName: freelanceInfo?.name || null,
+        freelanceEmail: freelanceInfo?.email || null,
+        currentView,
+        sentAt: new Date().toISOString()
+      });
+
+      if (!result?.success) {
+        throw new Error(
+          result?.message ||
+            `Impossible d'envoyer le feedback pour le moment. Vous pouvez nous écrire à ${FEEDBACK_FALLBACK_EMAIL}.`
+        );
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+
+      throw new Error(
+        `Une erreur inattendue est survenue. Vous pouvez nous écrire à ${FEEDBACK_FALLBACK_EMAIL}.`
+      );
+    }
+  };
+
   if (!isAuthenticated) {
     return <LoginModal onLogin={handleLogin} />;
   }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-            <Header
+      <Header
         currentView={currentView}
         onViewChange={handleViewChange}
         onNewProject={handleNewProject}
         onOpenApiConfig={handleOpenApiConfig}
         onLogout={handleLogout}
+        onOpenFeedback={handleOpenFeedback}
         isApiConfigured={isApiConfigured}
         freelanceInfo={freelanceInfo}
         disabled={isSaving}
@@ -528,6 +577,14 @@ function App() {
             markOnboardingAsSeen(dontShowAgain ? 'hidden' : 'acknowledged');
             setShowOnboarding(false);
           }}
+        />
+      )}
+
+      {showFeedbackModal && (
+        <FeedbackModal
+          freelanceInfo={freelanceInfo}
+          onClose={() => setShowFeedbackModal(false)}
+          onSubmit={handleSubmitFeedback}
         />
       )}
 
