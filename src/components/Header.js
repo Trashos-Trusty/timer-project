@@ -1,13 +1,24 @@
 import React from 'react';
-import { Clock, Timer, Plus, LogOut, Zap, Server, AlertTriangle, Download } from 'lucide-react';
+import {
+  Clock,
+  Timer,
+  Plus,
+  LogOut,
+  Zap,
+  Server,
+  AlertTriangle,
+  Download,
+  MessageCircle
+} from 'lucide-react';
 
 const Header = ({ 
   currentView, 
   onViewChange, 
   onNewProject, 
   onOpenApiConfig, 
-  onLogout, 
-  isApiConfigured, 
+  onLogout,
+  onOpenFeedback = () => {},
+  isApiConfigured,
   freelanceInfo,
   disabled = false,
   isTimerRunning = false 
@@ -148,6 +159,15 @@ const Header = ({
               <span className="hidden md:inline">Plugin WP</span>
             </button>
             
+            <button
+              onClick={() => onOpenFeedback && onOpenFeedback()}
+              className="btn-secondary flex items-center space-x-2 border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
+              title="Partager un retour ou signaler un bug"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span className="hidden md:inline">Feedback</span>
+            </button>
+
             <button
               onClick={() => !isTimerRunning && onLogout()}
               disabled={isTimerRunning}
