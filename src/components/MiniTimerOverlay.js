@@ -231,12 +231,12 @@ const MiniTimerOverlay = ({
   const showPauseButton = canPause || canResume;
   const showStopButton = typeof onStop === 'function';
   const contentClasses = isWindowVariant
-    ? 'flex h-full w-full flex-col items-center justify-between gap-2'
+    ? 'flex h-full w-full flex-col items-center justify-start gap-1 pt-1 pb-2'
     : `flex flex-col items-center ${isCompact ? 'gap-2.5' : 'gap-4'}`;
-  const headerGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-2' : 'gap-3';
-  const projectInfoGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-1.5' : 'gap-2';
-  const projectNameClass = isWindowVariant ? 'text-[10px]' : isCompact ? 'text-xs' : 'text-sm';
-  const statusTypographyClass = isWindowVariant ? 'gap-1 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
+  const headerGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-2' : 'gap-3';
+  const projectInfoGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-1.5' : 'gap-2';
+  const projectNameClass = isWindowVariant ? 'text-[9.5px]' : isCompact ? 'text-xs' : 'text-sm';
+  const statusTypographyClass = isWindowVariant ? 'gap-0.5 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
   const stateIndicatorClass = isWindowVariant ? 'h-1.5 w-1.5' : isCompact ? 'h-2.5 w-2.5' : 'h-2.5 w-2.5';
   const innerCircleInsetClass = isWindowVariant ? 'absolute inset-[8px]' : isCompact ? 'absolute inset-[10px]' : 'absolute inset-[12px]';
   const expandButtonPositionClass = isWindowVariant ? 'absolute top-1.5 right-1.5' : isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
@@ -248,17 +248,19 @@ const MiniTimerOverlay = ({
   const subjectTextClass = isWindowVariant ? 'mt-0.5 text-[10px] leading-tight' : isCompact ? 'mt-1 text-xs leading-snug' : 'mt-2 text-sm leading-tight';
   const totalBadgeClass = isWindowVariant ? 'mt-1.5 gap-1 px-2 py-0.5 text-[9px]' : isCompact ? 'mt-2 gap-1.5 px-2.5 py-0.5 text-[10px]' : 'mt-4 gap-2 px-3 py-1 text-xs';
   const totalIconClass = isWindowVariant ? 'h-2.5 w-2.5' : isCompact ? 'h-3 w-3' : 'h-3.5 w-3.5';
-  const bottomSectionGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-2' : 'gap-3';
+  const bottomSectionGapClass = isWindowVariant ? 'gap-1.5' : isCompact ? 'gap-2' : 'gap-3';
   const toggleInfoClass = isWindowVariant ? 'gap-0.5 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
-  const toggleButtonClass = isWindowVariant ? 'px-1.5 py-0.5 text-[8.5px]' : isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]';
-  const controlsGapClass = isWindowVariant ? 'gap-1.5' : 'gap-3';
+  const toggleButtonClass = isWindowVariant ? 'px-1 py-0.5 text-[8.5px]' : isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]';
+  const controlsGapClass = isWindowVariant ? 'gap-2' : 'gap-3';
   const primaryButtonSizeClass = isWindowVariant
-    ? 'min-w-[68px] px-2.5 py-0.5 text-[10px]'
+    ? 'h-10 w-10 p-0'
     : isCompact
       ? 'min-w-[84px] px-3 py-1.5 text-xs'
       : 'min-w-[92px] px-4 py-2 text-sm';
-  const controlIconSizeClass = isWindowVariant ? 'h-3 w-3' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  const controlIconSizeClass = isWindowVariant ? 'h-4 w-4' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
   const circleContentClass = `relative z-10 flex h-full w-full flex-col items-center justify-center ${circleContentPaddingClass} text-center`;
+  const showTotalBadge = !isWindowVariant;
+  const showButtonLabels = !isWindowVariant;
 
   if (!hasSnapshot || !project) {
     return null;
@@ -341,12 +343,14 @@ const MiniTimerOverlay = ({
               >
                 {subjectLabel}
               </span>
-              <div
-                className={`inline-flex items-center rounded-full bg-white/75 font-medium text-gray-600 ${totalBadgeClass}`}
-              >
-                <Clock className={`${totalIconClass} text-gray-400`} />
-                <span>Total projet&nbsp;: {formatTime(currentTime)}</span>
-              </div>
+              {showTotalBadge && (
+                <div
+                  className={`inline-flex items-center rounded-full bg-white/75 font-medium text-gray-600 ${totalBadgeClass}`}
+                >
+                  <Clock className={`${totalIconClass} text-gray-400`} />
+                  <span>Total projet&nbsp;: {formatTime(currentTime)}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -373,16 +377,17 @@ const MiniTimerOverlay = ({
                 <button
                   type="button"
                   onClick={handlePauseClick}
-                  className={`flex items-center justify-center gap-2 rounded-full font-medium transition ${
+                  className={`flex items-center justify-center ${showButtonLabels ? 'gap-2' : ''} rounded-full font-medium transition ${
                     isRunning
                       ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/25 hover:bg-primary-500'
                       : 'bg-white text-primary-600 border border-primary-200 hover:bg-primary-50'
                   } ${primaryButtonSizeClass}`}
                   style={interactiveStyle}
                   disabled={isRunning ? !canPause : !canResume}
+                  aria-label={pauseButtonLabel}
                 >
                   <PauseResumeIcon className={controlIconSizeClass} />
-                  {pauseButtonLabel}
+                  {showButtonLabels && pauseButtonLabel}
                 </button>
               )}
 
@@ -390,14 +395,15 @@ const MiniTimerOverlay = ({
                 <button
                   type="button"
                   onClick={handleStopClick}
-                  className={`flex items-center justify-center gap-2 rounded-full border border-red-200 bg-white font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 ${
+                  className={`flex items-center justify-center ${showButtonLabels ? 'gap-2' : ''} rounded-full border border-red-200 bg-white font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 ${
                     primaryButtonSizeClass
                   }`}
                   style={interactiveStyle}
                   disabled={!hasPendingSession}
+                  aria-label="Stop"
                 >
                   <Square className={controlIconSizeClass} />
-                  Stop
+                  {showButtonLabels && 'Stop'}
                 </button>
               )}
             </div>
