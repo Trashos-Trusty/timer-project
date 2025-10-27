@@ -4,7 +4,7 @@ import connectionManager from '../connectionManager';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
 
-const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled = false, onTimerStateChange }, ref) => {
+const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled = false, onTimerStateChange, onTimerSnapshot }, ref) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [showTimeEdit, setShowTimeEdit] = useState(false);
@@ -184,6 +184,27 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
       onTimerStateChange(isRunning);
     }
   }, [isRunning, onTimerStateChange]);
+
+  useEffect(() => {
+    if (!onTimerSnapshot) {
+      return;
+    }
+
+    if (!selectedProject) {
+      onTimerSnapshot(null);
+      return;
+    }
+
+    onTimerSnapshot({
+      project: {
+        id: selectedProject.id,
+        name: selectedProject.name,
+      },
+      currentTime,
+      isRunning,
+      currentSubject: currentSubject || '',
+    });
+  }, [onTimerSnapshot, selectedProject, currentTime, isRunning, currentSubject]);
 
   // Nettoyer le timer quand le composant se démonte ou change de projet
   useEffect(() => {
