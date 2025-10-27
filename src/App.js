@@ -11,6 +11,7 @@ import ConnectionStatus from './components/ConnectionStatus';
 import UpdateManager from './components/UpdateManager';
 import OnboardingModal from './components/OnboardingModal';
 import FeedbackModal from './components/FeedbackModal';
+import MiniTimerOverlay from './components/MiniTimerOverlay';
 import connectionManager from './connectionManager';
 import './index.css';
 
@@ -33,6 +34,8 @@ function App() {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [miniTimerSnapshot, setMiniTimerSnapshot] = useState(null);
+  const [isMiniTimerCollapsed, setIsMiniTimerCollapsed] = useState(true);
 
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
@@ -247,6 +250,7 @@ function App() {
     setIsAuthenticated(false);
     setFreelanceInfo(null);
     setSelectedProject(null);
+    setMiniTimerSnapshot(null);
     
     // Effacer le token local
     if (window.electronAPI && window.electronAPI.clearToken) {
@@ -275,6 +279,10 @@ function App() {
       // Désélectionner le projet
       setSelectedProject(null);
     }
+    if (newView === 'stopwatch') {
+      setMiniTimerSnapshot(null);
+    }
+
     setCurrentView(newView);
   };
 
@@ -505,6 +513,12 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
+      <MiniTimerOverlay
+        snapshot={miniTimerSnapshot}
+        isCollapsed={isMiniTimerCollapsed}
+        onToggleCollapse={() => setIsMiniTimerCollapsed((prev) => !prev)}
+      />
+
       <Header
         currentView={currentView}
         onViewChange={handleViewChange}
@@ -545,6 +559,7 @@ function App() {
               onProjectUpdate={handleProjectUpdate}
               disabled={isSaving}
               onTimerStateChange={setIsTimerRunning}
+              onTimerSnapshot={setMiniTimerSnapshot}
             />
           ) : (
             <Stopwatch />
