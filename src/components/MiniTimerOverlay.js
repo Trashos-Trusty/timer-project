@@ -231,7 +231,7 @@ const MiniTimerOverlay = ({
   const showPauseButton = canPause || canResume;
   const showStopButton = typeof onStop === 'function';
   const contentClasses = isWindowVariant
-    ? 'flex h-full w-full flex-col items-center justify-start gap-1 pt-1 pb-2'
+    ? 'flex h-full w-full flex-col items-center justify-start gap-1.5 pt-1.5 pb-2'
     : `flex flex-col items-center ${isCompact ? 'gap-2.5' : 'gap-4'}`;
   const headerGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-2' : 'gap-3';
   const projectInfoGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-1.5' : 'gap-2';
@@ -251,16 +251,19 @@ const MiniTimerOverlay = ({
   const bottomSectionGapClass = isWindowVariant ? 'gap-1.5' : isCompact ? 'gap-2' : 'gap-3';
   const toggleInfoClass = isWindowVariant ? 'gap-0.5 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
   const toggleButtonClass = isWindowVariant ? 'px-1 py-0.5 text-[8.5px]' : isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]';
-  const controlsGapClass = isWindowVariant ? 'gap-2' : 'gap-3';
+  const controlsGapClass = isWindowVariant ? 'gap-1.5' : 'gap-3';
   const primaryButtonSizeClass = isWindowVariant
-    ? 'h-10 w-10 p-0'
+    ? 'h-7 w-7 p-0'
     : isCompact
       ? 'min-w-[84px] px-3 py-1.5 text-xs'
       : 'min-w-[92px] px-4 py-2 text-sm';
-  const controlIconSizeClass = isWindowVariant ? 'h-4 w-4' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  const controlIconSizeClass = isWindowVariant ? 'h-3.5 w-3.5' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
   const circleContentClass = `relative z-10 flex h-full w-full flex-col items-center justify-center ${circleContentPaddingClass} text-center`;
   const showTotalBadge = !isWindowVariant;
   const showButtonLabels = !isWindowVariant;
+  const showHeader = !isWindowVariant;
+  const showToggleInfo = !isWindowVariant;
+  const showDragHandle = Boolean(isWindowVariant && enableWindowDrag);
 
   if (!hasSnapshot || !project) {
     return null;
@@ -275,26 +278,34 @@ const MiniTimerOverlay = ({
     >
       <div className={panelClasses}>
         <div className={contentClasses} style={interactiveStyle}>
-          <div className={`flex w-full items-center justify-between ${headerGapClass}`} style={dragRegionStyle}>
-            <div className={`flex items-center ${projectInfoGapClass} min-w-0`}>
-              <span
-                className={`inline-flex ${stateIndicatorClass} rounded-full ${
-                  isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+          {showDragHandle && (
+            <div className="flex w-full justify-center pb-1" style={dragRegionStyle}>
+              <span className="h-1 w-10 rounded-full bg-gray-200"></span>
+            </div>
+          )}
+
+          {showHeader && (
+            <div className={`flex w-full items-center justify-between ${headerGapClass}`} style={dragRegionStyle}>
+              <div className={`flex items-center ${projectInfoGapClass} min-w-0`}>
+                <span
+                  className={`inline-flex ${stateIndicatorClass} rounded-full ${
+                    isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+                  }`}
+                ></span>
+                <span className={`${projectNameClass} font-medium text-gray-700 truncate`}>
+                  {project.name}
+                </span>
+              </div>
+              <div
+                className={`inline-flex items-center uppercase tracking-wide ${statusTypographyClass} ${
+                  isRunning ? 'text-green-600' : 'text-gray-500'
                 }`}
-              ></span>
-              <span className={`${projectNameClass} font-medium text-gray-700 truncate`}>
-                {project.name}
-              </span>
+              >
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-current"></span>
+                {isRunning ? 'En cours' : 'En pause'}
+              </div>
             </div>
-            <div
-              className={`inline-flex items-center uppercase tracking-wide ${statusTypographyClass} ${
-                isRunning ? 'text-green-600' : 'text-gray-500'
-              }`}
-            >
-              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-current"></span>
-              {isRunning ? 'En cours' : 'En pause'}
-            </div>
-          </div>
+          )}
 
           <div
             className={`relative flex items-center justify-center ${isWindowVariant ? 'flex-1 w-full' : ''}`}
@@ -355,22 +366,24 @@ const MiniTimerOverlay = ({
           </div>
 
           <div className={`flex w-full flex-col items-center ${bottomSectionGapClass}`} style={interactiveStyle}>
-            <div
-              className={`flex items-center text-gray-400 uppercase tracking-wide ${toggleInfoClass} ${
-                isWindowVariant ? 'justify-center' : ''
-              }`}
-            >
-              <span>{isWindowVariant ? (isCollapsed ? 'Compact' : 'Détaillée') : isCollapsed ? 'Mode compact' : 'Vue détaillée'}</span>
-              {typeof onToggleCollapse === 'function' && (
-                <button
-                  type="button"
-                  onClick={onToggleCollapse}
-                  className={`rounded-full bg-white/70 font-medium text-primary-600 shadow-sm transition hover:bg-primary-50 ${toggleButtonClass}`}
-                >
-                  {isCollapsed ? 'Afficher plus' : 'Réduire'}
-                </button>
-              )}
-            </div>
+            {showToggleInfo && (
+              <div
+                className={`flex items-center text-gray-400 uppercase tracking-wide ${toggleInfoClass} ${
+                  isWindowVariant ? 'justify-center' : ''
+                }`}
+              >
+                <span>{isWindowVariant ? (isCollapsed ? 'Compact' : 'Détaillée') : isCollapsed ? 'Mode compact' : 'Vue détaillée'}</span>
+                {typeof onToggleCollapse === 'function' && (
+                  <button
+                    type="button"
+                    onClick={onToggleCollapse}
+                    className={`rounded-full bg-white/70 font-medium text-primary-600 shadow-sm transition hover:bg-primary-50 ${toggleButtonClass}`}
+                  >
+                    {isCollapsed ? 'Afficher plus' : 'Réduire'}
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className={`flex w-full items-center justify-center ${controlsGapClass}`}>
               {showPauseButton && (
