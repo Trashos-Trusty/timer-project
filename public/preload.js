@@ -95,5 +95,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateError: (callback) => {
     ipcRenderer.on('update-error', callback);
     return () => ipcRenderer.removeListener('update-error', callback);
+  },
+
+  // Fenêtre mini-timer
+  setMiniTimerVisibility: (shouldShow) => ipcRenderer.invoke('set-mini-timer-visibility', shouldShow),
+  updateMiniTimerSnapshot: (snapshot) => ipcRenderer.send('mini-timer-snapshot', snapshot),
+  requestMiniTimerSnapshot: () => ipcRenderer.invoke('request-mini-timer-snapshot'),
+  onMiniTimerSnapshot: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('mini-timer-snapshot', handler);
+    return () => ipcRenderer.removeListener('mini-timer-snapshot', handler);
   }
-}); 
+});
