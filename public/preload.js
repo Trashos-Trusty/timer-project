@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Fenêtre mini-timer
+  minimizeMainWindow: () => ipcRenderer.invoke('minimize-main-window'),
   setMiniTimerVisibility: (shouldShow) => ipcRenderer.invoke('set-mini-timer-visibility', shouldShow),
   updateMiniTimerSnapshot: (snapshot) => ipcRenderer.send('mini-timer-snapshot', snapshot),
   requestMiniTimerSnapshot: () => ipcRenderer.invoke('request-mini-timer-snapshot'),
