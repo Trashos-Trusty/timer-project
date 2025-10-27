@@ -521,6 +521,20 @@ ipcMain.handle('set-mini-timer-visibility', async (event, shouldShow) => {
   }
 });
 
+ipcMain.handle('minimize-main-window', async () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.minimize();
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Erreur lors de la réduction de la fenêtre principale:', error);
+    return false;
+  }
+});
+
 ipcMain.on('mini-timer-snapshot', (event, snapshot) => {
   try {
     lastMiniTimerSnapshot = snapshot;
