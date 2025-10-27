@@ -8,8 +8,7 @@ import {
   Server,
   AlertTriangle,
   Download,
-  MessageCircle,
-  AppWindow
+  MessageCircle
 } from 'lucide-react';
 
 const Header = ({ 
@@ -22,10 +21,7 @@ const Header = ({
   isApiConfigured,
   freelanceInfo,
   disabled = false,
-  isTimerRunning = false,
-  onToggleMiniTimer = () => {},
-  isMiniTimerVisible = false,
-  canShowMiniTimer = false
+  isTimerRunning = false
 }) => {
   // Mode développeur - désactivé par défaut pour les utilisateurs finaux
   // Pour l'activer, changer cette ligne ou créer un fichier .env avec REACT_APP_DEVELOPER_MODE=true
@@ -109,25 +105,6 @@ const Header = ({
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-sm font-medium">API non configurée</span>
               </div>
-            )}
-
-            {canShowMiniTimer && (
-              <button
-                onClick={() => onToggleMiniTimer && onToggleMiniTimer()}
-                className={`btn-secondary flex items-center space-x-2 border-primary-200 text-primary-700 hover:bg-primary-100 ${
-                  isMiniTimerVisible ? 'bg-primary-100' : 'bg-white'
-                }`}
-                title={
-                  isMiniTimerVisible
-                    ? 'Masquer la version mini et revenir à la fenêtre principale'
-                    : 'Afficher la version mini et réduire la fenêtre principale'
-                }
-              >
-                <AppWindow className="w-4 h-4" />
-                <span className="hidden md:inline">
-                  {isMiniTimerVisible ? 'Mini active' : 'Mini minuterie'}
-                </span>
-              </button>
             )}
 
             <button

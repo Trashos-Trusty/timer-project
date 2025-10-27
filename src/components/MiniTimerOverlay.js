@@ -25,6 +25,7 @@ const MiniTimerOverlay = ({
   isDraggable = false,
   position,
   onPositionChange,
+  enableWindowDrag = false,
 }) => {
   const hasSnapshot = Boolean(snapshot?.project);
   const project = snapshot?.project;
@@ -152,9 +153,22 @@ const MiniTimerOverlay = ({
     };
   }, [handlePointerMove, handlePointerUp, dragStateRef]);
 
-  const containerStyle = isDraggable
-    ? { left: effectivePosition.x ?? 16, top: effectivePosition.y ?? 16 }
-    : undefined;
+  const containerStyle = (() => {
+    const style = {};
+
+    if (isDraggable) {
+      style.left = effectivePosition.x ?? 16;
+      style.top = effectivePosition.y ?? 16;
+    }
+
+    if (enableWindowDrag) {
+      style.WebkitAppRegion = 'drag';
+    }
+
+    return Object.keys(style).length > 0 ? style : undefined;
+  })();
+
+  const interactiveStyle = enableWindowDrag ? { WebkitAppRegion: 'no-drag' } : undefined;
 
   if (!hasSnapshot || !project) {
     return null;
@@ -168,7 +182,10 @@ const MiniTimerOverlay = ({
       onPointerDown={isDraggable ? handlePointerDown : undefined}
     >
       <div className={panelClasses}>
-        <div className="flex items-center justify-between gap-3">
+        <div
+          className="flex items-center justify-between gap-3"
+          style={enableWindowDrag ? { WebkitAppRegion: 'drag' } : undefined}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <div
               className={`w-2 h-2 rounded-full ${
@@ -184,6 +201,7 @@ const MiniTimerOverlay = ({
             onClick={onToggleCollapse}
             className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
             aria-label={isCollapsed ? 'Afficher plus de détails du minuteur' : 'Réduire le minuteur'}
+            style={interactiveStyle}
           >
             {isCollapsed ? (
               <Maximize2 className="w-4 h-4" />
@@ -193,7 +211,7 @@ const MiniTimerOverlay = ({
           </button>
         </div>
 
-        <div className={`mt-2 ${isCollapsed ? '' : 'space-y-2'}`}>
+        <div className={`mt-2 ${isCollapsed ? '' : 'space-y-2'}`} style={interactiveStyle}>
           <div className="flex items-center gap-2">
             <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-50 text-primary-600">
               {isRunning ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
