@@ -36,16 +36,150 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [miniTimerSnapshot, setMiniTimerSnapshot] = useState(null);
+  const [isMiniTimerVisible, setIsMiniTimerVisible] = useState(false);
   const [isMiniTimerCollapsed, setIsMiniTimerCollapsed] = useState(() => {
     if (typeof window !== 'undefined' && window.location.hash === '#mini') {
       return false;
     }
     return true;
   });
+  const [miniTimerPosition, setMiniTimerPosition] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const storedPosition = window.localStorage.getItem('miniTimerPosition');
+        if (storedPosition) {
+          const parsed = JSON.parse(storedPosition);
+          if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+            return parsed;
+          }
+        }
+      } catch (error) {
+        console.warn("Impossible de charger la position du mini-timer :", error);
+      }
+    }
+
+    return { x: 16, y: 16 };
+  });
 
   const isMiniWindowMode = typeof window !== 'undefined' && window.location.hash === '#mini';
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
   const shouldRenderInlineMiniOverlay = !isElectron;
+  const canShowMiniTimer = Boolean(isTimerRunning && miniTimerSnapshot?.project);
+
+  const miniTimerWasVisibleRef = useRef(false);
+
+  const clampMiniTimerPosition = useCallback(
+    (position) => {
+      if (typeof window === 'undefined') {
+        return position;
+      }
+
+      const padding = 16;
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const estimatedWidth = isMiniTimerCollapsed ? 200 : 300;
+      const estimatedHeight = isMiniTimerCollapsed ? 100 : 180;
+      const maxX = Math.max(padding, width - estimatedWidth - padding);
+      const maxY = Math.max(padding, height - estimatedHeight - padding);
+
+      const nextX = position?.x ?? padding;
+      const nextY = position?.y ?? padding;
+      const clampedX = Math.min(Math.max(nextX, padding), maxX);
+      const clampedY = Math.min(Math.max(nextY, padding), maxY);
+
+      if (
+        position &&
+        typeof position.x === 'number' &&
+        typeof position.y === 'number' &&
+        position.x === clampedX &&
+        position.y === clampedY
+      ) {
+        return position;
+      }
+
+      return {
+        x: clampedX,
+        y: clampedY
+      };
+    },
+    [isMiniTimerCollapsed]
+  );
+
+  const handleMiniTimerPositionChange = useCallback(
+    (nextPosition) => {
+      setMiniTimerPosition((prevPosition) => {
+        const targetPosition = nextPosition || prevPosition;
+        const clamped = clampMiniTimerPosition(targetPosition);
+
+        if (
+          prevPosition &&
+          typeof prevPosition.x === 'number' &&
+          typeof prevPosition.y === 'number' &&
+          prevPosition.x === clamped.x &&
+          prevPosition.y === clamped.y
+        ) {
+          return prevPosition;
+        }
+
+        return clamped;
+      });
+    },
+    [clampMiniTimerPosition]
+  );
+
+  const handleToggleMiniTimer = useCallback(() => {
+    setIsMiniTimerVisible((prev) => {
+      if (!canShowMiniTimer && !prev) {
+        return prev;
+      }
+
+      return !prev;
+    });
+  }, [canShowMiniTimer]);
+
+  useEffect(() => {
+    setMiniTimerPosition((prev) => clampMiniTimerPosition(prev));
+  }, [clampMiniTimerPosition]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setMiniTimerPosition((prev) => clampMiniTimerPosition(prev));
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [clampMiniTimerPosition]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem('miniTimerPosition', JSON.stringify(miniTimerPosition));
+    } catch (error) {
+      console.warn("Impossible de sauvegarder la position du mini-timer :", error);
+    }
+  }, [miniTimerPosition]);
+
+  useEffect(() => {
+    if (!canShowMiniTimer) {
+      setIsMiniTimerVisible(false);
+    }
+  }, [canShowMiniTimer]);
+
+  useEffect(() => {
+    if (!isTimerRunning) {
+      setIsMiniTimerVisible(false);
+    }
+  }, [isTimerRunning]);
 
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
@@ -112,9 +246,15 @@ function App() {
       return;
     }
 
-    const shouldShowMiniWindow = Boolean(isTimerRunning && miniTimerSnapshot?.project);
+    const shouldShowMiniWindow = Boolean(isMiniTimerVisible && miniTimerSnapshot?.project);
     api.setMiniTimerVisibility(shouldShowMiniWindow);
-  }, [isMiniWindowMode, isTimerRunning, miniTimerSnapshot]);
+
+    if (shouldShowMiniWindow && !miniTimerWasVisibleRef.current) {
+      api.minimizeMainWindow?.();
+    }
+
+    miniTimerWasVisibleRef.current = shouldShowMiniWindow;
+  }, [isMiniWindowMode, isMiniTimerVisible, miniTimerSnapshot]);
 
   useEffect(() => {
     if (isMiniWindowMode) {
@@ -629,11 +769,14 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {shouldRenderInlineMiniOverlay && (
+      {shouldRenderInlineMiniOverlay && isMiniTimerVisible && (
         <MiniTimerOverlay
           snapshot={miniTimerSnapshot}
           isCollapsed={isMiniTimerCollapsed}
           onToggleCollapse={() => setIsMiniTimerCollapsed((prev) => !prev)}
+          isDraggable
+          position={miniTimerPosition}
+          onPositionChange={handleMiniTimerPositionChange}
         />
       )}
 
@@ -648,6 +791,9 @@ function App() {
         freelanceInfo={freelanceInfo}
         disabled={isSaving}
         isTimerRunning={isTimerRunning}
+        canShowMiniTimer={canShowMiniTimer}
+        onToggleMiniTimer={handleToggleMiniTimer}
+        isMiniTimerVisible={isMiniTimerVisible}
       />
       
       <div className="flex-1 flex overflow-hidden">
@@ -736,4 +882,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;
