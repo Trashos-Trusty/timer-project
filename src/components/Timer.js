@@ -207,16 +207,30 @@ const TimerComponent = forwardRef((
       return;
     }
 
+    const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
+    const currentSessionTime = Math.max(0, currentTime - baseProjectTime);
+    const hasPendingSession = Boolean(isRunning || accumulatedSessionTime > 0 || currentSessionTime > 0);
+
     onTimerSnapshot({
       project: {
         id: selectedProject.id,
         name: selectedProject.name,
       },
       currentTime,
+      currentSessionTime,
       isRunning,
-      currentSubject: currentSubject || '',
+      hasPendingSession,
+      currentSubject: effectiveSubject,
     });
-  }, [onTimerSnapshot, selectedProject, currentTime, isRunning, currentSubject]);
+  }, [
+    onTimerSnapshot,
+    selectedProject,
+    currentTime,
+    isRunning,
+    currentSubject,
+    baseProjectTime,
+    accumulatedSessionTime,
+  ]);
 
   // Nettoyer le timer quand le composant se démonte ou change de projet
   useEffect(() => {
@@ -865,9 +879,16 @@ const TimerComponent = forwardRef((
   }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime, baseProjectTime, persistProject]);
 
   // Exposer la fonction saveCurrentSession au composant parent
-  useImperativeHandle(ref, () => ({
-    saveCurrentSession
-  }), [saveCurrentSession]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveCurrentSession,
+      pauseTimer: handlePause,
+      stopTimer: handleStop,
+      resumeTimer: handleStart
+    }),
+    [saveCurrentSession, handlePause, handleStop, handleStart]
+  );
 
   // Sauvegarde automatique périodique + gestion fermeture
   useEffect(() => {
@@ -1092,7 +1113,7 @@ const TimerComponent = forwardRef((
                     />
                   </svg>
                   
-                  <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="text-center">
                       <div className={`${getTimerSize().fontSize} font-mono font-bold transition-all duration-200 ${isRunning ? 'text-warning-600 timer-active' : 'text-gray-900'}`}>
                         {formatTime(getRemainingTime())}
@@ -1161,7 +1182,7 @@ const TimerComponent = forwardRef((
                     />
                   </svg>
                   
-                  <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="text-center">
                       <div className={`${getTimerSize().fontSize} font-mono font-bold transition-all duration-200 ${isRunning ? 'text-warning-600 timer-active' : 'text-gray-900'}`}>
                         {formatTime(getRemainingTime())}

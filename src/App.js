@@ -184,6 +184,76 @@ function App() {
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
 
+  const hideMiniTimerWindow = useCallback(async () => {
+    setIsMiniTimerVisible(false);
+
+    if (window?.electronAPI?.setMiniTimerVisibility) {
+      try {
+        await window.electronAPI.setMiniTimerVisibility(false);
+      } catch (error) {
+        console.warn('Impossible de masquer la fenêtre mini :', error);
+      }
+    }
+  }, []);
+
+  const focusMainWindow = useCallback(async () => {
+    if (!window?.electronAPI?.showMainWindow) {
+      return;
+    }
+
+    try {
+      await window.electronAPI.showMainWindow();
+    } catch (error) {
+      console.warn('Impossible d\'afficher la fenêtre principale :', error);
+    }
+  }, []);
+
+  const handleMiniExpand = useCallback(async () => {
+    await hideMiniTimerWindow();
+    await focusMainWindow();
+  }, [hideMiniTimerWindow, focusMainWindow]);
+
+  const handleMiniPause = useCallback(async () => {
+    const pauseTimer = timerRef.current?.pauseTimer;
+    if (typeof pauseTimer !== 'function') {
+      return;
+    }
+
+    try {
+      await pauseTimer();
+    } catch (error) {
+      console.error('Erreur lors de la mise en pause depuis le mini-timer :', error);
+    }
+  }, []);
+
+  const handleMiniResume = useCallback(async () => {
+    const resumeTimer = timerRef.current?.resumeTimer;
+    if (typeof resumeTimer !== 'function') {
+      return;
+    }
+
+    try {
+      await resumeTimer();
+    } catch (error) {
+      console.error('Erreur lors de la reprise depuis le mini-timer :', error);
+    }
+  }, []);
+
+  const handleMiniStop = useCallback(async () => {
+    const stopTimer = timerRef.current?.stopTimer;
+    if (typeof stopTimer !== 'function') {
+      return;
+    }
+
+    try {
+      await stopTimer();
+    } catch (error) {
+      console.error('Erreur lors de l\'arrêt depuis le mini-timer :', error);
+    }
+
+    await handleMiniExpand();
+  }, [handleMiniExpand]);
+
   const markOnboardingAsSeen = useCallback((status = 'acknowledged') => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -235,6 +305,50 @@ function App() {
 
     api.updateMiniTimerSnapshot(miniTimerSnapshot);
   }, [isMiniWindowMode, miniTimerSnapshot]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || isMiniWindowMode) {
+      return undefined;
+    }
+
+    const api = window.electronAPI;
+    if (!api?.onMiniTimerAction) {
+      return undefined;
+    }
+
+    const cleanup = api.onMiniTimerAction((_event, payload) => {
+      const actionType = typeof payload === 'string' ? payload : payload?.type;
+
+      if (!actionType) {
+        return;
+      }
+
+      const safelyExecute = (fn) => {
+        try {
+          const result = fn();
+          if (result && typeof result.then === 'function') {
+            result.catch((error) => {
+              console.error('Erreur lors du traitement de l\'action mini-timer :', error);
+            });
+          }
+        } catch (error) {
+          console.error('Erreur lors du traitement de l\'action mini-timer :', error);
+        }
+      };
+
+      if (actionType === 'pause') {
+        safelyExecute(handleMiniPause);
+      } else if (actionType === 'resume') {
+        safelyExecute(handleMiniResume);
+      } else if (actionType === 'stop') {
+        safelyExecute(handleMiniStop);
+      } else if (actionType === 'expand') {
+        safelyExecute(handleMiniExpand);
+      }
+    });
+
+    return cleanup;
+  }, [isMiniWindowMode, handleMiniPause, handleMiniResume, handleMiniStop, handleMiniExpand]);
 
   useEffect(() => {
     if (isMiniWindowMode) {
@@ -777,6 +891,10 @@ function App() {
           isDraggable
           position={miniTimerPosition}
           onPositionChange={handleMiniTimerPositionChange}
+          onPause={handleMiniPause}
+          onResume={handleMiniResume}
+          onStop={handleMiniStop}
+          onRequestExpand={handleMiniExpand}
         />
       )}
 

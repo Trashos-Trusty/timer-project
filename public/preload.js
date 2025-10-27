@@ -102,6 +102,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setMiniTimerVisibility: (shouldShow) => ipcRenderer.invoke('set-mini-timer-visibility', shouldShow),
   updateMiniTimerSnapshot: (snapshot) => ipcRenderer.send('mini-timer-snapshot', snapshot),
   requestMiniTimerSnapshot: () => ipcRenderer.invoke('request-mini-timer-snapshot'),
+  showMainWindow: () => ipcRenderer.invoke('show-main-window'),
+  triggerMiniTimerAction: (payload) => ipcRenderer.invoke('mini-timer-action', payload),
+  onMiniTimerAction: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('mini-timer-action', handler);
+    return () => ipcRenderer.removeListener('mini-timer-action', handler);
+  },
   onMiniTimerSnapshot: (callback) => {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on('mini-timer-snapshot', handler);

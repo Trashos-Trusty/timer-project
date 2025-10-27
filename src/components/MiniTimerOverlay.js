@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useEffect } from 'react';
-import { Maximize2, Minimize2, Clock, Play, Pause } from 'lucide-react';
+import { Minimize2, Clock, Play, Pause, Square } from 'lucide-react';
 
 const formatTime = (seconds = 0) => {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -26,12 +26,18 @@ const MiniTimerOverlay = ({
   position,
   onPositionChange,
   enableWindowDrag = false,
+  onPause,
+  onResume,
+  onStop,
+  onRequestExpand,
 }) => {
   const hasSnapshot = Boolean(snapshot?.project);
   const project = snapshot?.project;
   const currentTime = snapshot?.currentTime ?? 0;
   const isRunning = snapshot?.isRunning ?? false;
   const currentSubject = snapshot?.currentSubject ?? '';
+  const currentSessionTime = snapshot?.currentSessionTime ?? 0;
+  const hasPendingSession = snapshot?.hasPendingSession ?? false;
   const subjectLabel = currentSubject.trim ? currentSubject.trim() || 'Sujet non défini' : 'Sujet non défini';
   const containerRef = useRef(null);
   const dragStateRef = useRef({
@@ -49,8 +55,8 @@ const MiniTimerOverlay = ({
     .join(' ');
   const panelClasses =
     panelClassName ||
-    `backdrop-blur bg-white/90 shadow-lg border border-gray-200 rounded-xl transition-all duration-200 ${
-      isCollapsed ? 'p-2 min-w-[140px]' : 'p-4 w-64'
+    `relative overflow-hidden backdrop-blur bg-white/95 shadow-xl border border-primary-100/60 rounded-[32px] transition-all duration-200 ${
+      isCollapsed ? 'px-5 py-4 w-[220px]' : 'px-6 py-5 w-[260px]'
     }`;
 
   const handlePointerMove = useCallback(
@@ -169,6 +175,36 @@ const MiniTimerOverlay = ({
   })();
 
   const interactiveStyle = enableWindowDrag ? { WebkitAppRegion: 'no-drag' } : undefined;
+  const dragRegionStyle = enableWindowDrag ? { WebkitAppRegion: 'drag' } : undefined;
+
+  const circleSize = isCollapsed ? 168 : 208;
+  const PauseResumeIcon = isRunning ? Pause : Play;
+  const pauseButtonLabel = isRunning ? 'Pause' : 'Reprendre';
+
+  const handlePauseClick = () => {
+    if (isRunning) {
+      onPause?.();
+    } else {
+      onResume?.();
+    }
+  };
+
+  const handleStopClick = () => {
+    if (typeof onStop === 'function') {
+      onStop();
+    }
+  };
+
+  const handleExpandClick = () => {
+    if (typeof onRequestExpand === 'function') {
+      onRequestExpand();
+    }
+  };
+
+  const canResume = Boolean(!isRunning && typeof onResume === 'function');
+  const canPause = Boolean(isRunning && typeof onPause === 'function');
+  const showPauseButton = canPause || canResume;
+  const showStopButton = typeof onStop === 'function';
 
   if (!hasSnapshot || !project) {
     return null;
@@ -182,67 +218,114 @@ const MiniTimerOverlay = ({
       onPointerDown={isDraggable ? handlePointerDown : undefined}
     >
       <div className={panelClasses}>
-        <div
-          className="flex items-center justify-between gap-3"
-          style={enableWindowDrag ? { WebkitAppRegion: 'drag' } : undefined}
-        >
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex flex-col items-center gap-4" style={interactiveStyle}>
+          <div className="flex items-center justify-between w-full gap-3" style={dragRegionStyle}>
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={`inline-flex h-2.5 w-2.5 rounded-full ${
+                  isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+                }`}
+              ></span>
+              <span className="text-sm font-medium text-gray-700 truncate">{project.name}</span>
+            </div>
             <div
-              className={`w-2 h-2 rounded-full ${
-                isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-300'
+              className={`inline-flex items-center gap-2 text-[11px] uppercase tracking-wide ${
+                isRunning ? 'text-green-600' : 'text-gray-500'
+              }`}
+            >
+              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-current"></span>
+              {isRunning ? 'En cours' : 'En pause'}
+            </div>
+          </div>
+
+          <div
+            className="relative flex items-center justify-center"
+            style={{
+              width: `${circleSize}px`,
+              height: `${circleSize}px`,
+            }}
+            data-prevent-drag
+            onDoubleClick={onToggleCollapse}
+          >
+            <div
+              className={`absolute inset-0 rounded-full bg-gradient-to-br ${
+                isRunning
+                  ? 'from-green-200/80 via-green-100/70 to-white/80'
+                  : 'from-gray-200/70 via-gray-100/60 to-white/80'
               }`}
             ></div>
-            <span className="text-xs font-medium text-gray-600 truncate">
-              {project.name}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-            aria-label={isCollapsed ? 'Afficher plus de détails du minuteur' : 'Réduire le minuteur'}
-            style={interactiveStyle}
-          >
-            {isCollapsed ? (
-              <Maximize2 className="w-4 h-4" />
-            ) : (
-              <Minimize2 className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-
-        <div className={`mt-2 ${isCollapsed ? '' : 'space-y-2'}`} style={interactiveStyle}>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-50 text-primary-600">
-              {isRunning ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            </div>
-            <div className="font-mono font-semibold text-lg text-gray-900">
-              {formatTime(currentTime)}
-            </div>
-          </div>
-
-          {!isCollapsed && (
-            <div className="space-y-2 text-xs text-gray-500">
-              <div className="flex items-start gap-2">
-                <Clock className="w-3 h-3 mt-0.5 text-gray-400" />
-                <span className="leading-tight">{subjectLabel}</span>
-              </div>
-              <div
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] uppercase tracking-wide ${
-                  isRunning
-                    ? 'bg-green-50 border-green-200 text-green-700'
-                    : 'bg-gray-50 border-gray-200 text-gray-500'
-                }`}
+            <div className="absolute inset-[12px] rounded-full bg-white/95 border border-white/60 shadow-inner"></div>
+            <div className="absolute top-3 right-3" style={interactiveStyle}>
+              <button
+                type="button"
+                onClick={handleExpandClick}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition hover:text-primary-600 hover:bg-white"
+                aria-label="Ouvrir l'application principale"
               >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isRunning ? 'bg-green-500' : 'bg-gray-400'
-                  }`}
-                ></span>
-                {isRunning ? 'En cours' : 'En pause'}
+                <Minimize2 className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="relative z-10 flex h-full w-full flex-col items-center justify-center px-6 text-center">
+              <span className="text-[11px] uppercase tracking-[0.25em] text-gray-400">Tâche en cours</span>
+              <span className="mt-2 font-mono text-2xl font-semibold text-gray-900">
+                {formatTime(currentSessionTime)}
+              </span>
+              <span className="mt-2 text-sm leading-tight text-gray-600 line-clamp-2">
+                {subjectLabel}
+              </span>
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/75 px-3 py-1 text-xs font-medium text-gray-600">
+                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                <span>Total projet&nbsp;: {formatTime(currentTime)}</span>
               </div>
             </div>
-          )}
+          </div>
+
+          <div className="flex w-full flex-col items-center gap-3" style={interactiveStyle}>
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-gray-400">
+              <span>{isCollapsed ? 'Mode compact' : 'Vue détaillée'}</span>
+              {typeof onToggleCollapse === 'function' && (
+                <button
+                  type="button"
+                  onClick={onToggleCollapse}
+                  className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-primary-600 shadow-sm transition hover:bg-primary-50"
+                >
+                  {isCollapsed ? 'Afficher plus' : 'Réduire'}
+                </button>
+              )}
+            </div>
+
+            <div className="flex w-full items-center justify-center gap-3">
+              {showPauseButton && (
+                <button
+                  type="button"
+                  onClick={handlePauseClick}
+                  className={`flex min-w-[92px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                    isRunning
+                      ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/25 hover:bg-primary-500'
+                      : 'bg-white text-primary-600 border border-primary-200 hover:bg-primary-50'
+                  }`}
+                  style={interactiveStyle}
+                  disabled={isRunning ? !canPause : !canResume}
+                >
+                  <PauseResumeIcon className="h-4 w-4" />
+                  {pauseButtonLabel}
+                </button>
+              )}
+
+              {showStopButton && (
+                <button
+                  type="button"
+                  onClick={handleStopClick}
+                  className="flex min-w-[92px] items-center justify-center gap-2 rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60"
+                  style={interactiveStyle}
+                  disabled={!hasPendingSession}
+                >
+                  <Square className="h-4 w-4" />
+                  Stop
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

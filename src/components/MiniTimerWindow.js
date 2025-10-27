@@ -1,7 +1,62 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import MiniTimerOverlay from './MiniTimerOverlay';
 
 const MiniTimerWindow = ({ snapshot, isCollapsed, onToggleCollapse }) => {
+  const triggerAction = useCallback(async (type) => {
+    if (!window?.electronAPI?.triggerMiniTimerAction) {
+      return;
+    }
+
+    try {
+      await window.electronAPI.triggerMiniTimerAction({
+        type,
+        projectId: snapshot?.project?.id ?? null,
+      });
+    } catch (error) {
+      console.error('Impossible de déclencher l\'action mini-timer:', error);
+    }
+  }, [snapshot?.project?.id]);
+
+  const handlePause = useCallback(() => {
+    if (!snapshot?.project) {
+      return;
+    }
+
+    triggerAction('pause');
+  }, [snapshot, triggerAction]);
+
+  const handleResume = useCallback(() => {
+    if (!snapshot?.project) {
+      return;
+    }
+
+    triggerAction('resume');
+  }, [snapshot, triggerAction]);
+
+  const handleStop = useCallback(async () => {
+    if (!snapshot?.project) {
+      return;
+    }
+
+    await triggerAction('stop');
+
+    if (window?.electronAPI?.showMainWindow) {
+      await window.electronAPI.showMainWindow();
+    }
+
+    window?.electronAPI?.setMiniTimerVisibility?.(false);
+  }, [snapshot, triggerAction]);
+
+  const handleExpand = useCallback(async () => {
+    await triggerAction('expand');
+
+    if (window?.electronAPI?.showMainWindow) {
+      await window.electronAPI.showMainWindow();
+    }
+
+    window?.electronAPI?.setMiniTimerVisibility?.(false);
+  }, [triggerAction]);
+
   return (
     <div
       className="min-h-screen min-w-[240px] bg-white flex items-center justify-center"
@@ -12,10 +67,11 @@ const MiniTimerWindow = ({ snapshot, isCollapsed, onToggleCollapse }) => {
           snapshot={snapshot}
           isCollapsed={isCollapsed}
           onToggleCollapse={onToggleCollapse}
-          containerClassName="w-full"
-          panelClassName={`shadow-lg border border-gray-200 rounded-xl transition-all duration-200 ${
-            isCollapsed ? 'p-3 w-full max-w-[220px]' : 'p-5 w-full max-w-xs'
-          }`}
+          containerClassName="w-full flex items-center justify-center"
+          onPause={handlePause}
+          onResume={handleResume}
+          onStop={handleStop}
+          onRequestExpand={handleExpand}
           enableWindowDrag
         />
       ) : (
