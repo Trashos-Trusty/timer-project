@@ -521,6 +521,27 @@ ipcMain.handle('set-mini-timer-visibility', async (event, shouldShow) => {
   }
 });
 
+ipcMain.handle('show-main-window', async () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.hide();
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Erreur lors de l\'affichage de la fenêtre principale:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('minimize-main-window', async () => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -531,6 +552,44 @@ ipcMain.handle('minimize-main-window', async () => {
     return false;
   } catch (error) {
     console.error('Erreur lors de la réduction de la fenêtre principale:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('mini-timer-action', async (_event, payload) => {
+  try {
+    const actionType = typeof payload === 'string' ? payload : payload?.type;
+
+    if (!actionType) {
+      return false;
+    }
+
+    const normalizedPayload =
+      payload && typeof payload === 'object'
+        ? { ...payload, type: actionType }
+        : { type: actionType };
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mini-timer-action', normalizedPayload);
+    }
+
+    if (['stop', 'expand'].includes(actionType)) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) {
+          mainWindow.restore();
+        }
+        mainWindow.show();
+        mainWindow.focus();
+      }
+
+      if (miniWindow && !miniWindow.isDestroyed()) {
+        miniWindow.hide();
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Erreur lors du traitement de l\'action mini-timer:', error);
     return false;
   }
 });
