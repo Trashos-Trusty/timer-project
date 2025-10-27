@@ -59,7 +59,7 @@ const MiniTimerWindow = ({ snapshot, isCollapsed, onToggleCollapse }) => {
 
   return (
     <div
-      className="h-full w-full bg-white flex items-center justify-center p-3"
+      className="h-full w-full bg-white flex items-center justify-center p-2"
       style={{ WebkitAppRegion: 'drag' }}
     >
       {snapshot && snapshot.project ? (
@@ -73,7 +73,7 @@ const MiniTimerWindow = ({ snapshot, isCollapsed, onToggleCollapse }) => {
           onStop={handleStop}
           onRequestExpand={handleExpand}
           enableWindowDrag
-          sizeVariant="compact"
+          sizeVariant="window"
         />
       ) : (
         <div className="text-center text-sm text-gray-500 px-6">
