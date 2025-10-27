@@ -37,6 +37,7 @@ const TimerComponent = forwardRef((
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [showTodaySummary, setShowTodaySummary] = useState(true);
   const [showAllTodaySessions, setShowAllTodaySessions] = useState(false);
+  const [lastSessionEndTime, setLastSessionEndTime] = useState(null);
   const [leftPanelWidth, setLeftPanelWidth] = useState(25); // Pourcentage de largeur pour le panneau de gauche
   const [isDragging, setIsDragging] = useState(false);
   const [isLargeScreen, setIsLargeScreen] = useState(() => {
@@ -58,6 +59,7 @@ const TimerComponent = forwardRef((
     }
     setIsRunning(false);
     setCurrentSessionStart(null);
+    setLastSessionEndTime(null);
   }, []);
 
   const persistProject = useCallback(async (projectData) => {
@@ -133,6 +135,7 @@ const TimerComponent = forwardRef((
 
       setBaseProjectTime(baseTime);
       setCurrentTime(projectCurrentTime);
+      setLastSessionEndTime(null);
       const initialSubject = selectedProject.currentSubject || '';
       setCurrentSubject(initialSubject);
       activeSessionSubjectRef.current = initialSubject;
@@ -174,11 +177,13 @@ const TimerComponent = forwardRef((
         // Important : Redémarrer une nouvelle session pour le temps réel
         setCurrentSessionStart(Date.now());
         setCurrentTime(projectCurrentTime);
+        setLastSessionEndTime(null);
       } else {
         console.log('⏸️ Projet en pause/arrêté, temps:', projectCurrentTime, 'temps accumulé:', projectAccumulatedTime);
         setIsRunning(false);
         setCurrentSessionStart(null);
         setCurrentTime(projectCurrentTime);
+        setLastSessionEndTime(null);
       }
       
     } catch (error) {
@@ -327,6 +332,7 @@ const TimerComponent = forwardRef((
     // Enregistrer le début de la nouvelle session (reprise ou démarrage)
     const now = Date.now();
     setCurrentSessionStart(now);
+    setLastSessionEndTime(null);
     
     // Définir sessionStartTime seulement si c'est un tout premier démarrage
     if (!sessionStartTime) {
@@ -354,6 +360,7 @@ const TimerComponent = forwardRef((
         console.log(`⏸️ Temps session courante: ${sessionDuration}s, temps total accumulé: ${newAccumulatedTime}s`);
         setAccumulatedSessionTime(newAccumulatedTime);
         setCurrentTime(baseProjectTime + newAccumulatedTime);
+        setLastSessionEndTime(sessionEnd);
       }
 
       // Arrêter le timer
@@ -756,9 +763,14 @@ const TimerComponent = forwardRef((
     }
 
     // Lors d'une sauvegarde automatique (fermeture/logout), sauvegarder même si le timer n'est pas en cours
-    if (!isAutoSave && (!isRunning || !currentSessionStart)) {
-      console.log('❌ Timer non actif ou pas de session en cours pour la sauvegarde manuelle');
-      return;
+    if (!isAutoSave) {
+      const hasActiveManualSession =
+        (isRunning && currentSessionStart) || (!isRunning && accumulatedSessionTime > 0);
+
+      if (!hasActiveManualSession) {
+        console.log('❌ Timer non actif ou pas de session en cours pour la sauvegarde manuelle');
+        return;
+      }
     }
 
     console.log(isAutoSave ? '💾 Sauvegarde automatique à la fermeture/logout' : '⏹️ Arrêt manuel du timer');
@@ -801,6 +813,35 @@ const TimerComponent = forwardRef((
         setAccumulatedSessionTime(0);
 
         console.log(`⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
+      }
+      // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
+      else if (!isAutoSave && !isRunning && accumulatedSessionTime > 0) {
+        const sessionEnd = lastSessionEndTime || Date.now();
+        totalSessionDuration = accumulatedSessionTime;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
+        const sessionSubject = effectiveSubject || 'Travail général';
+        const fallbackStart = sessionEnd - totalSessionDuration * 1000;
+        const sessionStartTimestamp = sessionStartTime
+          ? Math.min(sessionStartTime, fallbackStart)
+          : fallbackStart;
+        const newSession = {
+          id: `session-${Date.now()}`,
+          subject: sessionSubject,
+          startTime: new Date(sessionStartTimestamp).toISOString(),
+          endTime: new Date(sessionEnd).toISOString(),
+          duration: totalSessionDuration,
+          date: new Date(sessionEnd).toISOString().split('T')[0]
+        };
+
+        updatedWorkSessions = [...workSessions, newSession];
+        sessionCreated = true;
+        sessionSubjectForModal = sessionSubject;
+        activeSessionSubjectRef.current = sessionSubject;
+
+        setAccumulatedSessionTime(0);
+
+        console.log(`⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}"`);
       }
       // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
       else if (isAutoSave && (currentSessionStart || accumulatedSessionTime > 0)) {
@@ -863,6 +904,7 @@ const TimerComponent = forwardRef((
         setBaseProjectTime(finalTotalTime);
         setCurrentTime(finalTotalTime);
         setSessionStartTime(null);
+        setLastSessionEndTime(null);
 
         // Afficher la modal de confirmation seulement si une session a été créée
         if (sessionCreated) {
@@ -876,7 +918,21 @@ const TimerComponent = forwardRef((
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
     }
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, cleanupTimer, accumulatedSessionTime, baseProjectTime, persistProject]);
+  }, [
+    selectedProject,
+    isRunning,
+    currentSessionStart,
+    currentTime,
+    currentSubject,
+    sessionStartTime,
+    subjectHistory,
+    workSessions,
+    cleanupTimer,
+    accumulatedSessionTime,
+    baseProjectTime,
+    persistProject,
+    lastSessionEndTime
+  ]);
 
   // Exposer la fonction saveCurrentSession au composant parent
   useImperativeHandle(
