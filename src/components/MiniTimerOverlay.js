@@ -59,8 +59,8 @@ const MiniTimerOverlay = ({
   const panelClasses = panelClassName
     ? panelClassName
     : isWindowVariant
-      ? `relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-[28px] border border-primary-100/60 bg-white/95 px-4 shadow-xl transition-all duration-200 ${
-          isCollapsed ? 'h-[200px] w-[200px] py-3' : 'h-[220px] w-[220px] py-4'
+      ? `relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-[24px] border border-primary-100/60 bg-white/95 px-3 shadow-xl transition-all duration-200 ${
+          isCollapsed ? 'h-[176px] w-[188px] py-2.5' : 'h-[192px] w-[200px] py-3.5'
         }`
       : `relative overflow-hidden backdrop-blur bg-white/95 shadow-xl border border-primary-100/60 ${
           isCompact ? 'rounded-2xl' : 'rounded-[32px]'
@@ -194,7 +194,7 @@ const MiniTimerOverlay = ({
 
   const circleSize = (() => {
     if (isWindowVariant) {
-      return isCollapsed ? 118 : 138;
+      return isCollapsed ? 108 : 124;
     }
 
     if (!isCompact) {
@@ -231,29 +231,29 @@ const MiniTimerOverlay = ({
   const showPauseButton = canPause || canResume;
   const showStopButton = typeof onStop === 'function';
   const contentClasses = isWindowVariant
-    ? 'flex h-full w-full flex-col items-center justify-between gap-2.5'
+    ? 'flex h-full w-full flex-col items-center justify-between gap-2'
     : `flex flex-col items-center ${isCompact ? 'gap-2.5' : 'gap-4'}`;
-  const headerGapClass = isWindowVariant ? 'gap-1.5' : isCompact ? 'gap-2' : 'gap-3';
-  const projectInfoGapClass = isWindowVariant ? 'gap-1.5' : isCompact ? 'gap-1.5' : 'gap-2';
-  const projectNameClass = isWindowVariant ? 'text-[11px]' : isCompact ? 'text-xs' : 'text-sm';
-  const statusTypographyClass = isWindowVariant ? 'gap-1 text-[9px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
-  const stateIndicatorClass = isWindowVariant ? 'h-2 w-2' : isCompact ? 'h-2.5 w-2.5' : 'h-2.5 w-2.5';
-  const innerCircleInsetClass = isWindowVariant ? 'absolute inset-[9px]' : isCompact ? 'absolute inset-[10px]' : 'absolute inset-[12px]';
-  const expandButtonPositionClass = isWindowVariant ? 'absolute top-2 right-2' : isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
-  const expandButtonSizeClass = isWindowVariant ? 'h-6 w-6' : isCompact ? 'h-7 w-7' : 'h-8 w-8';
-  const expandIconSizeClass = isWindowVariant ? 'h-3 w-3' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
-  const circleContentPaddingClass = isWindowVariant ? 'px-4' : isCompact ? 'px-4' : 'px-6';
-  const circleLabelClass = isWindowVariant ? 'text-[9px] tracking-[0.2em]' : isCompact ? 'text-[10px] tracking-[0.18em]' : 'text-[11px] tracking-[0.25em]';
-  const timerValueClass = isWindowVariant ? 'text-lg' : isCompact ? 'text-xl' : 'text-2xl';
-  const subjectTextClass = isWindowVariant ? 'mt-1 text-[11px] leading-snug' : isCompact ? 'mt-1 text-xs leading-snug' : 'mt-2 text-sm leading-tight';
-  const totalBadgeClass = isWindowVariant ? 'mt-2 gap-1.5 px-2.5 py-0.5 text-[10px]' : isCompact ? 'mt-2 gap-1.5 px-2.5 py-0.5 text-[10px]' : 'mt-4 gap-2 px-3 py-1 text-xs';
-  const totalIconClass = isWindowVariant ? 'h-3 w-3' : isCompact ? 'h-3 w-3' : 'h-3.5 w-3.5';
-  const bottomSectionGapClass = isWindowVariant ? 'gap-1.5' : isCompact ? 'gap-2' : 'gap-3';
-  const toggleInfoClass = isWindowVariant ? 'gap-1 text-[9px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
-  const toggleButtonClass = isWindowVariant ? 'px-2 py-0.5 text-[9px]' : isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]';
-  const controlsGapClass = isWindowVariant ? 'gap-2' : 'gap-3';
+  const headerGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-2' : 'gap-3';
+  const projectInfoGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-1.5' : 'gap-2';
+  const projectNameClass = isWindowVariant ? 'text-[10px]' : isCompact ? 'text-xs' : 'text-sm';
+  const statusTypographyClass = isWindowVariant ? 'gap-1 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
+  const stateIndicatorClass = isWindowVariant ? 'h-1.5 w-1.5' : isCompact ? 'h-2.5 w-2.5' : 'h-2.5 w-2.5';
+  const innerCircleInsetClass = isWindowVariant ? 'absolute inset-[8px]' : isCompact ? 'absolute inset-[10px]' : 'absolute inset-[12px]';
+  const expandButtonPositionClass = isWindowVariant ? 'absolute top-1.5 right-1.5' : isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
+  const expandButtonSizeClass = isWindowVariant ? 'h-5 w-5' : isCompact ? 'h-7 w-7' : 'h-8 w-8';
+  const expandIconSizeClass = isWindowVariant ? 'h-2.5 w-2.5' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  const circleContentPaddingClass = isWindowVariant ? 'px-3' : isCompact ? 'px-4' : 'px-6';
+  const circleLabelClass = isWindowVariant ? 'text-[8.5px] tracking-[0.18em]' : isCompact ? 'text-[10px] tracking-[0.18em]' : 'text-[11px] tracking-[0.25em]';
+  const timerValueClass = isWindowVariant ? 'text-base' : isCompact ? 'text-xl' : 'text-2xl';
+  const subjectTextClass = isWindowVariant ? 'mt-0.5 text-[10px] leading-tight' : isCompact ? 'mt-1 text-xs leading-snug' : 'mt-2 text-sm leading-tight';
+  const totalBadgeClass = isWindowVariant ? 'mt-1.5 gap-1 px-2 py-0.5 text-[9px]' : isCompact ? 'mt-2 gap-1.5 px-2.5 py-0.5 text-[10px]' : 'mt-4 gap-2 px-3 py-1 text-xs';
+  const totalIconClass = isWindowVariant ? 'h-2.5 w-2.5' : isCompact ? 'h-3 w-3' : 'h-3.5 w-3.5';
+  const bottomSectionGapClass = isWindowVariant ? 'gap-1' : isCompact ? 'gap-2' : 'gap-3';
+  const toggleInfoClass = isWindowVariant ? 'gap-0.5 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
+  const toggleButtonClass = isWindowVariant ? 'px-1.5 py-0.5 text-[8.5px]' : isCompact ? 'px-1.5 py-0.5 text-[9px]' : 'px-2 py-0.5 text-[10px]';
+  const controlsGapClass = isWindowVariant ? 'gap-1.5' : 'gap-3';
   const primaryButtonSizeClass = isWindowVariant
-    ? 'min-w-[78px] px-3 py-1 text-[11px]'
+    ? 'min-w-[68px] px-2.5 py-0.5 text-[10px]'
     : isCompact
       ? 'min-w-[84px] px-3 py-1.5 text-xs'
       : 'min-w-[92px] px-4 py-2 text-sm';
