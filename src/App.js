@@ -12,6 +12,7 @@ import UpdateManager from './components/UpdateManager';
 import OnboardingModal from './components/OnboardingModal';
 import FeedbackModal from './components/FeedbackModal';
 import MiniTimerOverlay from './components/MiniTimerOverlay';
+import MiniTimerWindow from './components/MiniTimerWindow';
 import connectionManager from './connectionManager';
 import './index.css';
 
@@ -35,7 +36,16 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [miniTimerSnapshot, setMiniTimerSnapshot] = useState(null);
-  const [isMiniTimerCollapsed, setIsMiniTimerCollapsed] = useState(true);
+  const [isMiniTimerCollapsed, setIsMiniTimerCollapsed] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.hash === '#mini') {
+      return false;
+    }
+    return true;
+  });
+
+  const isMiniWindowMode = typeof window !== 'undefined' && window.location.hash === '#mini';
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+  const shouldRenderInlineMiniOverlay = !isElectron;
 
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
@@ -50,9 +60,81 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!isMiniWindowMode) {
+      return;
+    }
+
+    const api = window.electronAPI;
+    if (!api?.onMiniTimerSnapshot) {
+      return undefined;
+    }
+
+    const cleanup = api.onMiniTimerSnapshot((snapshot) => {
+      setMiniTimerSnapshot(snapshot || null);
+    });
+
+    api.requestMiniTimerSnapshot?.()
+      .then((snapshot) => {
+        if (snapshot) {
+          setMiniTimerSnapshot(snapshot);
+        } else {
+          setMiniTimerSnapshot(null);
+        }
+      })
+      .catch((error) => {
+        console.warn('Impossible de récupérer le snapshot du mini-timer :', error);
+      });
+
+    return cleanup;
+  }, [isMiniWindowMode]);
+
+  useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
+    const api = window.electronAPI;
+    if (!api?.updateMiniTimerSnapshot) {
+      return;
+    }
+
+    api.updateMiniTimerSnapshot(miniTimerSnapshot);
+  }, [isMiniWindowMode, miniTimerSnapshot]);
+
+  useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
+    const api = window.electronAPI;
+    if (!api?.setMiniTimerVisibility) {
+      return;
+    }
+
+    const shouldShowMiniWindow = Boolean(isTimerRunning && miniTimerSnapshot?.project);
+    api.setMiniTimerVisibility(shouldShowMiniWindow);
+  }, [isMiniWindowMode, isTimerRunning, miniTimerSnapshot]);
+
+  useEffect(() => {
+    if (isMiniWindowMode) {
+      return undefined;
+    }
+
+    const api = window.electronAPI;
+
+    return () => {
+      api?.setMiniTimerVisibility?.(false);
+    };
+  }, [isMiniWindowMode]);
+
   // Charger les projets
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async () => {
     try {
+      if (isMiniWindowMode) {
+        return;
+      }
+
       if (window.electronAPI) {
         console.log('🔄 Chargement des projets...');
         const loadedProjects = await window.electronAPI.loadProjects();
@@ -85,12 +167,15 @@ function App() {
         connectionManager.handleConnectionError();
       }
     }
-  };
+  }, [isMiniWindowMode]);
 
   // Vérifier la configuration API et l'authentification
   const checkApiConfig = useCallback(async () => {
     try {
       console.log('🔧 Vérification de la configuration API...');
+      if (isMiniWindowMode) {
+        return;
+      }
       if (window.electronAPI) {
         // Vérifier si l'API est configurée
         const configured = await window.electronAPI.isApiConfigured();
@@ -122,10 +207,15 @@ function App() {
         setShowApiModal(true);
       }
     }
-  }, [isApiConfigured]);
+  }, [isApiConfigured, isMiniWindowMode]);
 
   // Initialisation au démarrage
   useEffect(() => {
+    if (isMiniWindowMode) {
+      setIsLoading(false);
+      return;
+    }
+
     const initializeApp = async () => {
       try {
         console.log('🚀 Initialisation de l\'application...');
@@ -146,10 +236,14 @@ function App() {
     };
     
     initializeApp();
-  }, [checkApiConfig]);
+  }, [checkApiConfig, isMiniWindowMode]);
 
   // Charger les projets quand l'utilisateur est authentifié
   useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
     if (isAuthenticated) {
       console.log('🔐 Utilisateur authentifié, chargement des projets...');
       loadProjects();
@@ -158,9 +252,13 @@ function App() {
       setProjects([]);
       setShowOnboarding(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isMiniWindowMode, loadProjects]);
 
   useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
     if (!isAuthenticated) {
       return;
     }
@@ -177,10 +275,14 @@ function App() {
       console.warn('Impossible de lire l\'état de l\'onboarding :', error);
       setShowOnboarding(true);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isMiniWindowMode]);
 
   // Gérer les événements de connexion
   useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
     const unsubscribe = connectionManager.addListener((event) => {
       if (event.type === 'reconnected' && isAuthenticated) {
         // Quand la connexion est rétablie, recharger les projets
@@ -192,18 +294,22 @@ function App() {
     });
 
     return unsubscribe;
-  }, [isAuthenticated]); // Removed loadProjects dependency to avoid infinite re-renders
+  }, [isAuthenticated, isMiniWindowMode, loadProjects]);
 
   // Gestionnaire d'événements du menu Electron
   useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
     if (window.electronAPI) {
       const cleanup = window.electronAPI.onMenuNewProject(() => {
         handleNewProject();
       });
-      
+
       return cleanup;
     }
-  }, []);
+  }, [isMiniWindowMode]);
 
   const handleLogin = async (credentials) => {
     // Authentification directe via API
@@ -507,17 +613,29 @@ function App() {
     }
   };
 
+  if (isMiniWindowMode) {
+    return (
+      <MiniTimerWindow
+        snapshot={miniTimerSnapshot}
+        isCollapsed={isMiniTimerCollapsed}
+        onToggleCollapse={() => setIsMiniTimerCollapsed((prev) => !prev)}
+      />
+    );
+  }
+
   if (!isAuthenticated) {
     return <LoginModal onLogin={handleLogin} />;
   }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <MiniTimerOverlay
-        snapshot={miniTimerSnapshot}
-        isCollapsed={isMiniTimerCollapsed}
-        onToggleCollapse={() => setIsMiniTimerCollapsed((prev) => !prev)}
-      />
+      {shouldRenderInlineMiniOverlay && (
+        <MiniTimerOverlay
+          snapshot={miniTimerSnapshot}
+          isCollapsed={isMiniTimerCollapsed}
+          onToggleCollapse={() => setIsMiniTimerCollapsed((prev) => !prev)}
+        />
+      )}
 
       <Header
         currentView={currentView}
