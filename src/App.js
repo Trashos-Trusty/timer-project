@@ -791,9 +791,6 @@ function App() {
         freelanceInfo={freelanceInfo}
         disabled={isSaving}
         isTimerRunning={isTimerRunning}
-        canShowMiniTimer={canShowMiniTimer}
-        onToggleMiniTimer={handleToggleMiniTimer}
-        isMiniTimerVisible={isMiniTimerVisible}
       />
       
       <div className="flex-1 flex overflow-hidden">
@@ -824,6 +821,9 @@ function App() {
               disabled={isSaving}
               onTimerStateChange={setIsTimerRunning}
               onTimerSnapshot={setMiniTimerSnapshot}
+              onToggleMiniTimer={handleToggleMiniTimer}
+              isMiniTimerVisible={isMiniTimerVisible}
+              canShowMiniTimer={canShowMiniTimer}
             />
           ) : (
             <Stopwatch />
