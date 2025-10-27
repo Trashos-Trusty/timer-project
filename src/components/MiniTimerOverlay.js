@@ -18,6 +18,8 @@ const MiniTimerOverlay = ({
   snapshot,
   isCollapsed,
   onToggleCollapse,
+  containerClassName,
+  panelClassName,
 }) => {
   if (!snapshot || !snapshot.project) {
     return null;
@@ -25,14 +27,16 @@ const MiniTimerOverlay = ({
 
   const { project, currentTime, isRunning, currentSubject } = snapshot;
   const subjectLabel = currentSubject?.trim() || 'Sujet non défini';
+  const containerClasses = containerClassName || 'fixed top-4 left-4 z-50';
+  const panelClasses =
+    panelClassName ||
+    `backdrop-blur bg-white/90 shadow-lg border border-gray-200 rounded-xl transition-all duration-200 ${
+      isCollapsed ? 'p-2 min-w-[140px]' : 'p-4 w-64'
+    }`;
 
   return (
-    <div className="fixed top-4 left-4 z-50">
-      <div
-        className={`backdrop-blur bg-white/90 shadow-lg border border-gray-200 rounded-xl transition-all duration-200 ${
-          isCollapsed ? 'p-2 min-w-[140px]' : 'p-4 w-64'
-        }`}
-      >
+    <div className={containerClasses}>
+      <div className={panelClasses}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <div

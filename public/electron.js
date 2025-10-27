@@ -11,9 +11,63 @@ const UpdateManager = require('./utils/updateManager');
 
 // Variables globales
 let mainWindow;
+let miniWindow;
 let configManager;
 let apiManager;
 let updateManager;
+let lastMiniTimerSnapshot = null;
+
+const appStartUrl = isDev
+  ? 'http://localhost:3000'
+  : `file://${path.join(__dirname, '../build/index.html')}`;
+
+function createMiniWindow() {
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    return miniWindow;
+  }
+
+  miniWindow = new BrowserWindow({
+    width: 320,
+    height: 160,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    frame: false,
+    show: false,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    backgroundColor: '#FFFFFF',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,
+    },
+  });
+
+  miniWindow.setAlwaysOnTop(true, 'floating');
+  miniWindow.loadURL(`${appStartUrl}#mini`);
+
+  miniWindow.once('ready-to-show', () => {
+    miniWindow.show();
+    if (lastMiniTimerSnapshot) {
+      miniWindow.webContents.send('mini-timer-snapshot', lastMiniTimerSnapshot);
+    }
+  });
+
+  miniWindow.webContents.on('did-finish-load', () => {
+    if (lastMiniTimerSnapshot) {
+      miniWindow.webContents.send('mini-timer-snapshot', lastMiniTimerSnapshot);
+    }
+  });
+
+  miniWindow.on('closed', () => {
+    miniWindow = null;
+  });
+
+  return miniWindow;
+}
 
 function createWindow() {
   // Créer la fenêtre principale de l'application
@@ -43,15 +97,11 @@ function createWindow() {
   });
 
   // Charger l'application React
-  const startUrl = isDev 
-    ? 'http://localhost:3000' 
-    : `file://${path.join(__dirname, '../build/index.html')}`;
-  
-  console.log('🚀 Chargement de l\'URL:', startUrl);
+  console.log('🚀 Chargement de l\'URL:', appStartUrl);
   console.log('📁 __dirname:', __dirname);
   console.log('🏗️ isDev:', isDev);
-  
-  mainWindow.loadURL(startUrl);
+
+  mainWindow.loadURL(appStartUrl);
   
   // Sécurité supplémentaire : Intercepter les nouvelles fenêtres
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -201,7 +251,11 @@ app.on('window-all-closed', async () => {
   if (apiManager) {
     await apiManager.cleanup();
   }
-  
+
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.destroy();
+  }
+
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -447,4 +501,38 @@ ipcMain.handle('set-config', async (event, config) => {
   }
 });
 
-// Les handlers pour les mises à jour sont gérés par UpdateManager dans updateManager.js 
+// Les handlers pour les mises à jour sont gérés par UpdateManager dans updateManager.js
+
+ipcMain.handle('set-mini-timer-visibility', async (event, shouldShow) => {
+  try {
+    if (shouldShow) {
+      const window = createMiniWindow();
+      if (window && !window.isDestroyed()) {
+        window.show();
+      }
+    } else if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.hide();
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la fenêtre mini-timer:', error);
+    return false;
+  }
+});
+
+ipcMain.on('mini-timer-snapshot', (event, snapshot) => {
+  try {
+    lastMiniTimerSnapshot = snapshot;
+
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.webContents.send('mini-timer-snapshot', snapshot);
+    }
+  } catch (error) {
+    console.error('Erreur lors de l\'envoi du snapshot du mini-timer:', error);
+  }
+});
+
+ipcMain.handle('request-mini-timer-snapshot', () => {
+  return lastMiniTimerSnapshot;
+});
