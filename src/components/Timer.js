@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2 } from 'lucide-react';
+import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow } from 'lucide-react';
 import connectionManager from '../connectionManager';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
 
-const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled = false, onTimerStateChange, onTimerSnapshot }, ref) => {
+const TimerComponent = forwardRef((
+  {
+    selectedProject,
+    onProjectUpdate,
+    disabled = false,
+    onTimerStateChange,
+    onTimerSnapshot,
+    onToggleMiniTimer = () => {},
+    isMiniTimerVisible = false,
+    canShowMiniTimer = false
+  },
+  ref
+) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [showTimeEdit, setShowTimeEdit] = useState(false);
@@ -952,6 +964,14 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
     };
   }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession, baseProjectTime, accumulatedSessionTime, persistProject]);
 
+  const handleMiniTimerToggle = useCallback(() => {
+    if (!canShowMiniTimer) {
+      return;
+    }
+
+    onToggleMiniTimer();
+  }, [canShowMiniTimer, onToggleMiniTimer]);
+
   if (!selectedProject) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -1016,13 +1036,36 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
               // Layout vertical pour grand écran
               <>
                 {/* Timer adaptatif */}
-                <div 
+                <div
                   className="relative mx-auto mb-3 transition-all duration-200"
-                  style={{ 
-                    width: `${getTimerSize().size}px`, 
-                    height: `${getTimerSize().size}px` 
+                  style={{
+                    width: `${getTimerSize().size}px`,
+                    height: `${getTimerSize().size}px`
                   }}
                 >
+                  {canShowMiniTimer && (
+                    <button
+                      type="button"
+                      onClick={handleMiniTimerToggle}
+                      className={`absolute -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
+                        isMiniTimerVisible
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-primary-600 border-primary-200 hover:bg-primary-50'
+                      }`}
+                      aria-label={
+                        isMiniTimerVisible
+                          ? 'Masquer la version mini'
+                          : 'Afficher la version mini'
+                      }
+                      title={
+                        isMiniTimerVisible
+                          ? 'Masquer la version mini'
+                          : 'Afficher la version mini'
+                      }
+                    >
+                      <AppWindow className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 128 128">
                     <circle
                       cx="64"
@@ -1062,13 +1105,36 @@ const TimerComponent = forwardRef(({ selectedProject, onProjectUpdate, disabled 
               // Layout horizontal compact pour petit écran
               <div className="flex items-center gap-4 mb-3">
                 {/* Timer compact */}
-                <div 
+                <div
                   className="relative flex-shrink-0 transition-all duration-200"
-                  style={{ 
-                    width: `${getTimerSize().size}px`, 
-                    height: `${getTimerSize().size}px` 
+                  style={{
+                    width: `${getTimerSize().size}px`,
+                    height: `${getTimerSize().size}px`
                   }}
                 >
+                  {canShowMiniTimer && (
+                    <button
+                      type="button"
+                      onClick={handleMiniTimerToggle}
+                      className={`absolute -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
+                        isMiniTimerVisible
+                          ? 'bg-primary-600 text-white border-primary-600'
+                          : 'bg-white text-primary-600 border-primary-200 hover:bg-primary-50'
+                      }`}
+                      aria-label={
+                        isMiniTimerVisible
+                          ? 'Masquer la version mini'
+                          : 'Afficher la version mini'
+                      }
+                      title={
+                        isMiniTimerVisible
+                          ? 'Masquer la version mini'
+                          : 'Afficher la version mini'
+                      }
+                    >
+                      <AppWindow className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 128 128">
                     <circle
                       cx="64"
