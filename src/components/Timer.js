@@ -57,6 +57,7 @@ const TimerComponent = forwardRef((
 
   const intervalRef = useRef(null);
   const activeSessionSubjectRef = useRef('');
+  const lastProjectUpdateRef = useRef({ projectId: null, lastSaved: null });
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -123,12 +124,48 @@ const TimerComponent = forwardRef((
       setCurrentSessionStart(null);
       setAccumulatedSessionTime(0);
       setBaseProjectTime(0);
+      lastProjectUpdateRef.current = { projectId: null, lastSaved: null };
       return;
     }
 
     try {
       console.log('📂 Chargement du projet:', selectedProject.id, 'avec currentTime:', selectedProject.currentTime);
-      
+
+      const projectLastSaved = (() => {
+        if (typeof selectedProject.lastSaved === 'number') {
+          return selectedProject.lastSaved;
+        }
+        if (selectedProject.lastSaved) {
+          const parsed = new Date(selectedProject.lastSaved).getTime();
+          return Number.isNaN(parsed) ? null : parsed;
+        }
+        return null;
+      })();
+
+      const { projectId: lastProjectId, lastSaved: lastAppliedSaved } = lastProjectUpdateRef.current;
+      const isSameProject = lastProjectId === selectedProject.id;
+      const hasProcessedLastSaved =
+        projectLastSaved !== null && lastAppliedSaved !== null && projectLastSaved === lastAppliedSaved;
+      const isRunningSameSessionUpdate =
+        selectedProject.status === 'running' && isSameProject && hasProcessedLastSaved;
+
+      if (isRunningSameSessionUpdate) {
+        const projectCurrentTime = selectedProject.currentTime || 0;
+        const projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
+
+        setCurrentTime((previousTime) => Math.max(previousTime, projectCurrentTime));
+        setAccumulatedSessionTime((previousAccumulated) =>
+          Math.max(previousAccumulated, projectAccumulatedTime)
+        );
+
+        lastProjectUpdateRef.current = {
+          projectId: selectedProject.id,
+          lastSaved: projectLastSaved,
+        };
+
+        return;
+      }
+
       // Arrêter le timer actuel avant de charger un nouveau projet
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -192,7 +229,12 @@ const TimerComponent = forwardRef((
         setCurrentTime(projectCurrentTime);
         setLastSessionEndTime(null);
       }
-      
+
+      lastProjectUpdateRef.current = {
+        projectId: selectedProject.id,
+        lastSaved: projectLastSaved,
+      };
+
     } catch (error) {
       console.error('❌ Erreur lors du chargement du projet:', error);
     }
