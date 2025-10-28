@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { Minimize2, Clock, Play, Pause, Square } from 'lucide-react';
 
 const formatTime = (seconds = 0) => {
@@ -47,6 +47,14 @@ const MiniTimerOverlay = ({
     offsetY: 0,
     lastUserSelect: ''
   });
+  const animationFrameRef = useRef(null);
+  const lastUpdateRef = useRef({
+    sessionTime: currentSessionTime,
+    totalTime: currentTime,
+    timestamp: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+  });
+  const [displaySessionTime, setDisplaySessionTime] = useState(currentSessionTime);
+  const [displayTotalTime, setDisplayTotalTime] = useState(currentTime);
   const effectivePosition = position || { x: 16, y: 16 };
   const isWindowVariant = sizeVariant === 'window';
   const isCompact = isWindowVariant || sizeVariant === 'compact';
@@ -173,6 +181,76 @@ const MiniTimerOverlay = ({
       }
     };
   }, [handlePointerMove, handlePointerUp, dragStateRef]);
+
+  useEffect(() => {
+    const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    lastUpdateRef.current = {
+      sessionTime: currentSessionTime,
+      totalTime: currentTime,
+      timestamp: getNow(),
+    };
+
+    setDisplaySessionTime(currentSessionTime);
+    setDisplayTotalTime(currentTime);
+  }, [currentSessionTime, currentTime]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const cancelAnimation = () => {
+      if (
+        animationFrameRef.current &&
+        typeof window !== 'undefined' &&
+        typeof window.cancelAnimationFrame === 'function'
+      ) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+      animationFrameRef.current = null;
+    };
+
+    const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    if (!isRunning) {
+      cancelAnimation();
+      setDisplaySessionTime(lastUpdateRef.current.sessionTime);
+      setDisplayTotalTime(lastUpdateRef.current.totalTime);
+      lastUpdateRef.current.timestamp = getNow();
+      return cancelAnimation;
+    }
+
+    lastUpdateRef.current.timestamp = getNow();
+
+    const tick = () => {
+      const now = getNow();
+      const elapsedSeconds = Math.max(0, (now - lastUpdateRef.current.timestamp) / 1000);
+      setDisplaySessionTime(lastUpdateRef.current.sessionTime + elapsedSeconds);
+      setDisplayTotalTime(lastUpdateRef.current.totalTime + elapsedSeconds);
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        animationFrameRef.current = window.requestAnimationFrame(tick);
+      }
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      animationFrameRef.current = window.requestAnimationFrame(tick);
+    }
+
+    return cancelAnimation;
+  }, [isRunning]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        animationFrameRef.current &&
+        typeof window !== 'undefined' &&
+        typeof window.cancelAnimationFrame === 'function'
+      ) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   const containerStyle = (() => {
     const style = {};
@@ -347,7 +425,7 @@ const MiniTimerOverlay = ({
                 Tâche en cours
               </span>
               <span className={`mt-1 font-mono font-semibold text-gray-900 ${timerValueClass}`}>
-                {formatTime(currentSessionTime)}
+                {formatTime(displaySessionTime)}
               </span>
               <span
                 className={`text-gray-600 line-clamp-2 ${subjectTextClass}`}
@@ -359,7 +437,7 @@ const MiniTimerOverlay = ({
                   className={`inline-flex items-center rounded-full bg-white/75 font-medium text-gray-600 ${totalBadgeClass}`}
                 >
                   <Clock className={`${totalIconClass} text-gray-400`} />
-                  <span>Total projet&nbsp;: {formatTime(currentTime)}</span>
+                  <span>Total projet&nbsp;: {formatTime(displayTotalTime)}</span>
                 </div>
               )}
             </div>
