@@ -71,7 +71,12 @@ function App() {
   const isMiniWindowMode = typeof window !== 'undefined' && window.location.hash === '#mini';
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
   const shouldRenderInlineMiniOverlay = !isElectron;
-  const canShowMiniTimer = Boolean(isTimerRunning && miniTimerSnapshot?.project);
+  const miniTimerHasProject = Boolean(miniTimerSnapshot?.project);
+  const miniTimerIsRunning = Boolean(miniTimerSnapshot?.isRunning);
+  const miniTimerHasPendingSession = Boolean(miniTimerSnapshot?.hasPendingSession);
+  const canShowMiniTimer = Boolean(
+    miniTimerHasProject && (miniTimerIsRunning || miniTimerHasPendingSession)
+  );
 
   const miniTimerWasVisibleRef = useRef(false);
 
@@ -183,10 +188,10 @@ function App() {
   }, [canShowMiniTimer]);
 
   useEffect(() => {
-    if (!isTimerRunning) {
+    if (!isTimerRunning && !miniTimerHasPendingSession) {
       setIsMiniTimerVisible(false);
     }
-  }, [isTimerRunning]);
+  }, [isTimerRunning, miniTimerHasPendingSession]);
 
   // Référence au composant Timer pour accéder à sa fonction de sauvegarde
   const timerRef = useRef(null);
