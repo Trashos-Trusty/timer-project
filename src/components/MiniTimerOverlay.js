@@ -226,8 +226,16 @@ const MiniTimerOverlay = ({
     const tick = () => {
       const now = getNow();
       const elapsedSeconds = Math.max(0, (now - lastUpdateRef.current.timestamp) / 1000);
-      setDisplaySessionTime(lastUpdateRef.current.sessionTime + elapsedSeconds);
-      setDisplayTotalTime(lastUpdateRef.current.totalTime + elapsedSeconds);
+      const nextSessionTime = lastUpdateRef.current.sessionTime + elapsedSeconds;
+      const nextTotalTime = lastUpdateRef.current.totalTime + elapsedSeconds;
+
+      setDisplaySessionTime(nextSessionTime);
+      setDisplayTotalTime(nextTotalTime);
+
+      lastUpdateRef.current.sessionTime = nextSessionTime;
+      lastUpdateRef.current.totalTime = nextTotalTime;
+      lastUpdateRef.current.timestamp = now;
+
       if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
         animationFrameRef.current = window.requestAnimationFrame(tick);
       }
