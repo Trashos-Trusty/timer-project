@@ -47,7 +47,14 @@ const TimerComponent = forwardRef((
     return window.innerWidth >= LARGE_SCREEN_BREAKPOINT;
   });
   const [lastAutoSave, setLastAutoSave] = useState(null);
-  
+
+  const currentSessionElapsed = Math.max(0, currentTime - baseProjectTime);
+  const hasPendingSession = Boolean(
+    isRunning ||
+    accumulatedSessionTime > 0 ||
+    currentSessionElapsed > 0
+  );
+
   const intervalRef = useRef(null);
   const activeSessionSubjectRef = useRef('');
 
@@ -213,8 +220,6 @@ const TimerComponent = forwardRef((
     }
 
     const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
-    const currentSessionTime = Math.max(0, currentTime - baseProjectTime);
-    const hasPendingSession = Boolean(isRunning || accumulatedSessionTime > 0 || currentSessionTime > 0);
 
     onTimerSnapshot({
       project: {
@@ -222,7 +227,7 @@ const TimerComponent = forwardRef((
         name: selectedProject.name,
       },
       currentTime,
-      currentSessionTime,
+      currentSessionTime: currentSessionElapsed,
       isRunning,
       hasPendingSession,
       currentSubject: effectiveSubject,
@@ -235,6 +240,8 @@ const TimerComponent = forwardRef((
     currentSubject,
     baseProjectTime,
     accumulatedSessionTime,
+    currentSessionElapsed,
+    hasPendingSession,
   ]);
 
   // Nettoyer le timer quand le composant se démonte ou change de projet
@@ -388,8 +395,10 @@ const TimerComponent = forwardRef((
   };
 
   const handleStop = async () => {
-    if (!selectedProject || !isRunning) return;
-    
+    if (!selectedProject || !hasPendingSession) {
+      return;
+    }
+
     // Utiliser la fonction de sauvegarde commune
     await saveCurrentSession(false);
   };
@@ -1343,14 +1352,14 @@ const TimerComponent = forwardRef((
                     <Pause className="w-3 h-3" />
                     <span>Pause</span>
                   </button>
-                  
+
                   <button
                     onClick={handleStop}
-                    disabled={disabled || !selectedProject || !isRunning}
+                    disabled={disabled || !selectedProject || !hasPendingSession}
                     className={`btn-danger flex items-center justify-center space-x-1 py-1 text-xs ${
-                      disabled || !selectedProject || !isRunning ? 'opacity-50 cursor-not-allowed' : ''
+                      disabled || !selectedProject || !hasPendingSession ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
-                    title={!isRunning ? 'Le chronomètre doit être démarré pour pouvoir l\'arrêter' : ''}
+                    title={!hasPendingSession ? "Aucune session en cours à arrêter" : ''}
                   >
                     <Square className="w-3 h-3" />
                     <span>Arrêter</span>
@@ -1381,14 +1390,14 @@ const TimerComponent = forwardRef((
                   <Pause className="w-3 h-3" />
                   <span>Pause</span>
                 </button>
-                
+
                 <button
                   onClick={handleStop}
-                  disabled={disabled || !selectedProject || !isRunning}
+                  disabled={disabled || !selectedProject || !hasPendingSession}
                   className={`flex-1 btn-danger flex items-center justify-center space-x-1 py-2 text-xs ${
-                    disabled || !selectedProject || !isRunning ? 'opacity-50 cursor-not-allowed' : ''
+                    disabled || !selectedProject || !hasPendingSession ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
-                  title={!isRunning ? 'Le chronomètre doit être démarré pour pouvoir l\'arrêter' : ''}
+                  title={!hasPendingSession ? "Aucune session en cours à arrêter" : ''}
                 >
                   <Square className="w-3 h-3" />
                   <span>Stop</span>
