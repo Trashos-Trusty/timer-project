@@ -353,7 +353,7 @@ function App() {
       return undefined;
     }
 
-    const cleanup = api.onMiniTimerAction((_event, payload) => {
+    const cleanup = api.onMiniTimerAction((payload) => {
       const actionType = typeof payload === 'string' ? payload : payload?.type;
 
       if (!actionType) {
