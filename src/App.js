@@ -18,6 +18,13 @@ import './index.css';
 
 const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
 const FEEDBACK_FALLBACK_EMAIL = 'enguerran@trustystudio.fr';
+const MINI_TIMER_MAX_WAIT_ATTEMPTS = 20;
+const MINI_TIMER_WAIT_DELAY_MS = 50;
+
+const delay = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -213,46 +220,76 @@ function App() {
     await focusMainWindow();
   }, [hideMiniTimerWindow, focusMainWindow]);
 
-  const handleMiniPause = useCallback(async () => {
-    const pauseTimer = timerRef.current?.pauseTimer;
-    if (typeof pauseTimer !== 'function') {
-      return;
+  const ensureTimerControls = useCallback(async () => {
+    if (currentView !== 'timer') {
+      setCurrentView('timer');
     }
 
-    try {
-      await pauseTimer();
-    } catch (error) {
-      console.error('Erreur lors de la mise en pause depuis le mini-timer :', error);
+    for (let attempt = 0; attempt < MINI_TIMER_MAX_WAIT_ATTEMPTS; attempt += 1) {
+      const timerControls = timerRef.current;
+
+      if (timerControls && typeof timerControls === 'object') {
+        return timerControls;
+      }
+
+      await delay(MINI_TIMER_WAIT_DELAY_MS);
     }
-  }, []);
+
+    return timerRef.current;
+  }, [currentView, setCurrentView]);
+
+  const performMiniTimerAction = useCallback(
+    async (action) => {
+      const actionMap = {
+        pause: 'pauseTimer',
+        resume: 'resumeTimer',
+        stop: 'stopTimer',
+      };
+
+      const methodName = actionMap[action];
+
+      if (!methodName) {
+        return false;
+      }
+
+      let timerControls = timerRef.current;
+
+      if (!timerControls || typeof timerControls[methodName] !== 'function') {
+        timerControls = await ensureTimerControls();
+      }
+
+      const actionHandler = timerControls?.[methodName];
+
+      if (typeof actionHandler !== 'function') {
+        console.warn(
+          `Impossible d'exécuter l'action "${action}" depuis le mini-timer : fonction indisponible.`
+        );
+        return false;
+      }
+
+      try {
+        await actionHandler();
+        return true;
+      } catch (error) {
+        console.error(`Erreur lors de l'exécution de l'action mini-timer "${action}" :`, error);
+        return false;
+      }
+    },
+    [ensureTimerControls]
+  );
+
+  const handleMiniPause = useCallback(async () => {
+    await performMiniTimerAction('pause');
+  }, [performMiniTimerAction]);
 
   const handleMiniResume = useCallback(async () => {
-    const resumeTimer = timerRef.current?.resumeTimer;
-    if (typeof resumeTimer !== 'function') {
-      return;
-    }
-
-    try {
-      await resumeTimer();
-    } catch (error) {
-      console.error('Erreur lors de la reprise depuis le mini-timer :', error);
-    }
-  }, []);
+    await performMiniTimerAction('resume');
+  }, [performMiniTimerAction]);
 
   const handleMiniStop = useCallback(async () => {
-    const stopTimer = timerRef.current?.stopTimer;
-    if (typeof stopTimer !== 'function') {
-      return;
-    }
-
-    try {
-      await stopTimer();
-    } catch (error) {
-      console.error('Erreur lors de l\'arrêt depuis le mini-timer :', error);
-    }
-
+    await performMiniTimerAction('stop');
     await handleMiniExpand();
-  }, [handleMiniExpand]);
+  }, [performMiniTimerAction, handleMiniExpand]);
 
   const markOnboardingAsSeen = useCallback((status = 'acknowledged') => {
     try {
