@@ -60,6 +60,7 @@ const TimerComponent = forwardRef((
   const lastProjectUpdateRef = useRef({ projectId: null, lastSaved: null });
   const lastManualStopRef = useRef(null);
   const pendingManualStopRef = useRef(null);
+  const carriedSessionDurationRef = useRef(0);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -127,6 +128,7 @@ const TimerComponent = forwardRef((
       setAccumulatedSessionTime(0);
       setBaseProjectTime(0);
       lastProjectUpdateRef.current = { projectId: null, lastSaved: null };
+      carriedSessionDurationRef.current = 0;
       return;
     }
 
@@ -216,6 +218,7 @@ const TimerComponent = forwardRef((
       });
       
       setWorkSessions(sessionsWithDate);
+      carriedSessionDurationRef.current = 0;
       
       // Reprendre le timer SEULEMENT si le statut est 'running'
       if (selectedProject.status === 'running') {
@@ -458,6 +461,7 @@ const TimerComponent = forwardRef((
     setCurrentSessionStart(null);
     setSessionStartTime(null);
     setAccumulatedSessionTime(0);
+    carriedSessionDurationRef.current = 0;
   };
 
   const handleTimeEdit = () => {
@@ -606,11 +610,12 @@ const TimerComponent = forwardRef((
       activeSessionSubjectRef.current = '';
       setCurrentSessionStart(null);
       setSessionStartTime(null);
-      
+
       setShowSubjectModal(false);
       setSubjectInput('');
       setPendingConfirmationSubject('');
-      
+      carriedSessionDurationRef.current = 0;
+
     } else if (subjectModalType === 'change') {
       // Changement de sujet en cours de session
       const now = Date.now();
@@ -668,6 +673,10 @@ const TimerComponent = forwardRef((
           typeof lastStop.previousCurrentTime === 'number'
             ? lastStop.previousCurrentTime
             : restoredBaseProjectTime + restoredAccumulatedSessionTime;
+
+        if (lastStop.totalSessionDuration) {
+          carriedSessionDurationRef.current = lastStop.totalSessionDuration;
+        }
 
         setBaseProjectTime(restoredBaseProjectTime);
         setAccumulatedSessionTime(restoredAccumulatedSessionTime);
@@ -954,8 +963,11 @@ const TimerComponent = forwardRef((
         const sessionEnd = Date.now();
         const currentSessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
 
-        // Calculer la durée totale : temps accumulé + session actuelle
-        totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
+        const carriedDuration = carriedSessionDurationRef.current || 0;
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTime, carriedDuration);
+
+        // Calculer la durée totale : temps accumulé (y compris les annulations précédentes) + session actuelle
+        totalSessionDuration = effectiveAccumulatedTime + currentSessionDuration;
         finalTotalTime = baseProjectTime + totalSessionDuration;
 
         // Créer une session avec le temps total
@@ -975,17 +987,21 @@ const TimerComponent = forwardRef((
         sessionSubjectForModal = sessionSubject;
         activeSessionSubjectRef.current = sessionSubject;
 
+        carriedSessionDurationRef.current = totalSessionDuration;
+
         // Réinitialiser le temps accumulé
         setAccumulatedSessionTime(0);
 
-        console.log(`⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
+        console.log(
+          `⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${effectiveAccumulatedTime}s accumulé + ${currentSessionDuration}s actuel)`
+        );
 
         manualStopSnapshot = {
           sessionCreated: true,
           newSession,
           previousWorkSessions: [...workSessions],
           previousBaseProjectTime: baseProjectTime,
-          previousAccumulatedSessionTime: accumulatedSessionTime,
+          previousAccumulatedSessionTime: effectiveAccumulatedTime,
           previousSessionStartTime: sessionStartTime,
           previousLastSessionEndTime: lastSessionEndTime,
           previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
@@ -999,7 +1015,10 @@ const TimerComponent = forwardRef((
       // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
       else if (!isAutoSave && !isRunning && accumulatedSessionTime > 0) {
         const sessionEnd = lastSessionEndTime || Date.now();
-        totalSessionDuration = accumulatedSessionTime;
+        const carriedDuration = carriedSessionDurationRef.current || 0;
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTime, carriedDuration);
+
+        totalSessionDuration = effectiveAccumulatedTime;
         finalTotalTime = baseProjectTime + totalSessionDuration;
 
         const sessionSubject = effectiveSubject || 'Travail général';
@@ -1022,16 +1041,20 @@ const TimerComponent = forwardRef((
         sessionSubjectForModal = sessionSubject;
         activeSessionSubjectRef.current = sessionSubject;
 
+        carriedSessionDurationRef.current = totalSessionDuration;
+
         setAccumulatedSessionTime(0);
 
-        console.log(`⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}"`);
+        console.log(
+          `⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}" (dont ${effectiveAccumulatedTime}s accumulés)`
+        );
 
         manualStopSnapshot = {
           sessionCreated: true,
           newSession,
           previousWorkSessions: [...workSessions],
           previousBaseProjectTime: baseProjectTime,
-          previousAccumulatedSessionTime: accumulatedSessionTime,
+          previousAccumulatedSessionTime: effectiveAccumulatedTime,
           previousSessionStartTime: sessionStartTime,
           previousLastSessionEndTime: lastSessionEndTime,
           previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
@@ -1127,7 +1150,11 @@ const TimerComponent = forwardRef((
           setShowSubjectModal(true);
         }
       }
-      
+
+      if (isAutoSave || !sessionCreated) {
+        carriedSessionDurationRef.current = 0;
+      }
+
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
     }
