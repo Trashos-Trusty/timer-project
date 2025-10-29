@@ -586,6 +586,14 @@ const TimerComponent = forwardRef((
         try {
           await persistProject(projectToPersist);
           console.log('✅ Session sauvegardée avec succès');
+
+          if (pendingStop.sessionCreated) {
+            const finalWorkSessions = Array.isArray(projectToPersist.workSessions)
+              ? projectToPersist.workSessions.map(session => ({ ...session }))
+              : [];
+
+            setWorkSessions(finalWorkSessions);
+          }
         } catch (error) {
           console.error('❌ Erreur lors de la sauvegarde:', error);
         }
@@ -1099,7 +1107,10 @@ const TimerComponent = forwardRef((
       // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
       if (!isAutoSave) {
         lastManualStopRef.current = manualStopSnapshot;
-        setWorkSessions(updatedWorkSessions);
+
+        if (!sessionCreated) {
+          setWorkSessions(updatedWorkSessions);
+        }
         cleanupTimer();
         setCurrentSessionStart(null);
         setAccumulatedSessionTime(0);
