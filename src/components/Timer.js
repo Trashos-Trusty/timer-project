@@ -452,7 +452,7 @@ const TimerComponent = forwardRef((
     handleStart();
   }, [shouldRestartAfterCancel, handleStart]);
 
-  const handlePause = async () => {
+  const handlePause = useCallback(async () => {
     if (!selectedProject || !isRunning) return;
 
     try {
@@ -494,7 +494,19 @@ const TimerComponent = forwardRef((
     } catch (error) {
       console.error('Erreur lors de la pause:', error);
     }
-  };
+  }, [
+    selectedProject,
+    isRunning,
+    clearInactivityTimeout,
+    accumulatedSessionTime,
+    currentSessionStart,
+    baseProjectTime,
+    currentSubject,
+    subjectHistory,
+    sessionStartTime,
+    workSessions,
+    persistProject
+  ]);
 
   const handleInactivityTimeout = useCallback(() => {
     if (!isRunning || showInactivityModal) {
