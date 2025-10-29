@@ -1176,7 +1176,7 @@ const TimerComponent = forwardRef((
                     <button
                       type="button"
                       onClick={handleMiniTimerToggle}
-                      className={`absolute -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
+                      className={`absolute z-10 -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
                         isMiniTimerVisible
                           ? 'bg-primary-600 text-white border-primary-600'
                           : 'bg-white text-primary-600 border-primary-200 hover:bg-primary-50'
@@ -1245,7 +1245,7 @@ const TimerComponent = forwardRef((
                     <button
                       type="button"
                       onClick={handleMiniTimerToggle}
-                      className={`absolute -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
+                      className={`absolute z-10 -top-2 -right-2 p-2 rounded-full shadow-md border text-xs transition-colors ${
                         isMiniTimerVisible
                           ? 'bg-primary-600 text-white border-primary-600'
                           : 'bg-white text-primary-600 border-primary-200 hover:bg-primary-50'
