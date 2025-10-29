@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow } from 'lucide-react';
+import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow, AlertTriangle } from 'lucide-react';
 import connectionManager from '../connectionManager';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
+const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000;
 
 const TimerComponent = forwardRef((
   {
@@ -48,6 +49,8 @@ const TimerComponent = forwardRef((
     return window.innerWidth >= LARGE_SCREEN_BREAKPOINT;
   });
   const [lastAutoSave, setLastAutoSave] = useState(null);
+  const [showInactivityModal, setShowInactivityModal] = useState(false);
+  const [inactivityContext, setInactivityContext] = useState(null);
 
   const currentSessionElapsed = Math.max(0, currentTime - baseProjectTime);
   const hasPendingSession = Boolean(
@@ -55,6 +58,7 @@ const TimerComponent = forwardRef((
     accumulatedSessionTime > 0 ||
     currentSessionElapsed > 0
   );
+  const inactivityDurationSeconds = inactivityContext?.idleSeconds ?? Math.floor(INACTIVITY_THRESHOLD_MS / 1000);
 
   const intervalRef = useRef(null);
   const activeSessionSubjectRef = useRef('');
@@ -65,12 +69,18 @@ const TimerComponent = forwardRef((
   const baseProjectTimeRef = useRef(baseProjectTime);
   const accumulatedSessionTimeRef = useRef(accumulatedSessionTime);
   const pendingRestartAfterCancelRef = useRef(false);
+  const inactivityTimeoutRef = useRef(null);
+  const lastInteractionRef = useRef(Date.now());
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+    if (inactivityTimeoutRef.current) {
+      clearTimeout(inactivityTimeoutRef.current);
+      inactivityTimeoutRef.current = null;
     }
     setIsRunning(false);
     setCurrentSessionStart(null);
@@ -88,6 +98,13 @@ const TimerComponent = forwardRef((
       }
     }
   }, [onProjectUpdate]);
+
+  const clearInactivityTimeout = useCallback(() => {
+    if (inactivityTimeoutRef.current) {
+      clearTimeout(inactivityTimeoutRef.current);
+      inactivityTimeoutRef.current = null;
+    }
+  }, []);
 
   const startTimer = useCallback(async () => {
     try {
@@ -140,6 +157,7 @@ const TimerComponent = forwardRef((
       setWorkSessions([]);
       setCurrentSessionStart(null);
       setAccumulatedSessionTime(0);
+      accumulatedSessionTimeRef.current = 0;
       setBaseProjectTime(0);
       lastProjectUpdateRef.current = { projectId: null, lastSaved: null };
       carriedSessionDurationRef.current = 0;
@@ -205,6 +223,7 @@ const TimerComponent = forwardRef((
       setSubjectHistory(selectedProject.subjectHistory || []);
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
+      accumulatedSessionTimeRef.current = projectAccumulatedTime;
 
       // S'assurer que toutes les sessions ont une propriété date correcte
       const sessionsWithDate = (selectedProject.workSessions || []).map(session => {
@@ -411,6 +430,7 @@ const TimerComponent = forwardRef((
       console.log('▶️ Reprise après pause, temps déjà accumulé:', accumulatedSessionTime);
     }
 
+    lastInteractionRef.current = Date.now();
     await startTimer();
   }, [
     selectedProject,
@@ -434,10 +454,11 @@ const TimerComponent = forwardRef((
 
   const handlePause = async () => {
     if (!selectedProject || !isRunning) return;
-    
+
     try {
+      clearInactivityTimeout();
       let newAccumulatedTime = accumulatedSessionTime;
-      
+
       // Accumuler le temps de la session en cours
       if (currentSessionStart) {
         const sessionEnd = Date.now();
@@ -446,6 +467,7 @@ const TimerComponent = forwardRef((
 
         console.log(`⏸️ Temps session courante: ${sessionDuration}s, temps total accumulé: ${newAccumulatedTime}s`);
         setAccumulatedSessionTime(newAccumulatedTime);
+        accumulatedSessionTimeRef.current = newAccumulatedTime;
         setCurrentTime(baseProjectTime + newAccumulatedTime);
         setLastSessionEndTime(sessionEnd);
       }
@@ -468,11 +490,93 @@ const TimerComponent = forwardRef((
       };
 
       await persistProject(updatedProject);
-      
+
     } catch (error) {
       console.error('Erreur lors de la pause:', error);
     }
   };
+
+  const handleInactivityTimeout = useCallback(() => {
+    if (!isRunning || showInactivityModal) {
+      return;
+    }
+
+    const processInactivity = async () => {
+      clearInactivityTimeout();
+      const now = Date.now();
+      const sessionDuration = currentSessionStart ? Math.floor((now - currentSessionStart) / 1000) : 0;
+      const previousAccumulated = accumulatedSessionTimeRef.current || 0;
+      const idleSeconds = Math.max(0, Math.floor((now - lastInteractionRef.current) / 1000));
+      const idleToConsider = Math.max(0, Math.min(idleSeconds, sessionDuration));
+
+      console.log(
+        `⏰ Inactivité détectée: ${idleToConsider}s d'inactivité (session ${sessionDuration}s, accumulé ${previousAccumulated}s)`
+      );
+
+      await handlePause();
+
+      setInactivityContext({
+        idleSeconds: idleToConsider,
+        sessionDuration,
+        previousAccumulatedTime: previousAccumulated,
+      });
+      setShowInactivityModal(true);
+    };
+
+    processInactivity();
+  }, [
+    isRunning,
+    showInactivityModal,
+    currentSessionStart,
+    handlePause,
+    clearInactivityTimeout
+  ]);
+
+  const resetInactivityTimer = useCallback(() => {
+    clearInactivityTimeout();
+
+    if (!isRunning || showInactivityModal) {
+      return;
+    }
+
+    inactivityTimeoutRef.current = setTimeout(() => {
+      handleInactivityTimeout();
+    }, INACTIVITY_THRESHOLD_MS);
+  }, [clearInactivityTimeout, isRunning, showInactivityModal, handleInactivityTimeout]);
+
+  const handleUserActivity = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    resetInactivityTimer();
+  }, [resetInactivityTimer]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    if (!isRunning || showInactivityModal) {
+      clearInactivityTimeout();
+      return undefined;
+    }
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'];
+    const activityHandler = () => {
+      handleUserActivity();
+    };
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, activityHandler, { passive: true });
+    });
+
+    handleUserActivity();
+
+    return () => {
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, activityHandler);
+      });
+      clearInactivityTimeout();
+    };
+  }, [isRunning, showInactivityModal, handleUserActivity, clearInactivityTimeout]);
 
   const handleStop = async () => {
     if (!selectedProject || !hasPendingSession) {
@@ -482,6 +586,44 @@ const TimerComponent = forwardRef((
     // Utiliser la fonction de sauvegarde commune
     await saveCurrentSession(false);
   };
+
+  const handleInactivityContinue = useCallback(async () => {
+    setShowInactivityModal(false);
+    setInactivityContext(null);
+    clearInactivityTimeout();
+    lastInteractionRef.current = Date.now();
+    await handleStart();
+  }, [clearInactivityTimeout, handleStart]);
+
+  const handleInactivityStop = useCallback(async () => {
+    const idleSeconds = inactivityContext?.idleSeconds ?? 0;
+
+    if (idleSeconds > 0) {
+      setAccumulatedSessionTime((prev) => {
+        const nextValue = Math.max(0, prev - idleSeconds);
+        accumulatedSessionTimeRef.current = nextValue;
+        return nextValue;
+      });
+      setCurrentTime((prev) => Math.max(0, prev - idleSeconds));
+      carriedSessionDurationRef.current = Math.max(
+        0,
+        (carriedSessionDurationRef.current || 0) - idleSeconds
+      );
+      setLastSessionEndTime((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const adjusted = prev - idleSeconds * 1000;
+        return adjusted > 0 ? adjusted : prev;
+      });
+    }
+
+    setShowInactivityModal(false);
+    setInactivityContext(null);
+    clearInactivityTimeout();
+
+    await saveCurrentSession(false);
+  }, [clearInactivityTimeout, inactivityContext, saveCurrentSession]);
 
   // Fonction d'urgence pour réinitialiser complètement le timer
   const resetTimer = () => {
@@ -493,6 +635,7 @@ const TimerComponent = forwardRef((
     setCurrentSessionStart(null);
     setSessionStartTime(null);
     setAccumulatedSessionTime(0);
+    accumulatedSessionTimeRef.current = 0;
     carriedSessionDurationRef.current = 0;
   };
 
@@ -510,6 +653,7 @@ const TimerComponent = forwardRef((
     setCurrentTime(totalSeconds);
     setBaseProjectTime(totalSeconds);
     setAccumulatedSessionTime(0);
+    accumulatedSessionTimeRef.current = 0;
     await updateProjectTime(totalSeconds, 0);
     setShowTimeEdit(false);
   };
@@ -812,6 +956,7 @@ const TimerComponent = forwardRef((
       setBaseProjectTime(newCurrentTime);
       setCurrentTime(newCurrentTime);
       setAccumulatedSessionTime(0);
+      accumulatedSessionTimeRef.current = 0;
       setSessionStartTime(null);
 
     } catch (error) {
@@ -971,7 +1116,7 @@ const TimerComponent = forwardRef((
     // Lors d'une sauvegarde automatique (fermeture/logout), sauvegarder même si le timer n'est pas en cours
     if (!isAutoSave) {
       const hasActiveManualSession =
-        (isRunning && currentSessionStart) || (!isRunning && accumulatedSessionTime > 0);
+        (isRunning && currentSessionStart) || (!isRunning && (accumulatedSessionTimeRef.current ?? accumulatedSessionTime) > 0);
 
       if (!hasActiveManualSession) {
         console.log('❌ Timer non actif ou pas de session en cours pour la sauvegarde manuelle');
@@ -980,6 +1125,11 @@ const TimerComponent = forwardRef((
     }
 
     console.log(isAutoSave ? '💾 Sauvegarde automatique à la fermeture/logout' : '⏹️ Arrêt manuel du timer');
+
+    const accumulatedSessionTimeValue =
+      typeof accumulatedSessionTimeRef.current === 'number'
+        ? accumulatedSessionTimeRef.current
+        : accumulatedSessionTime;
 
     try {
       let manualStopSnapshot = null;
@@ -998,7 +1148,7 @@ const TimerComponent = forwardRef((
         const currentSessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
 
         const carriedDuration = carriedSessionDurationRef.current || 0;
-        const effectiveAccumulatedTime = Math.max(accumulatedSessionTime, carriedDuration);
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
 
         // Calculer la durée totale : temps accumulé (y compris les annulations précédentes) + session actuelle
         totalSessionDuration = effectiveAccumulatedTime + currentSessionDuration;
@@ -1025,6 +1175,7 @@ const TimerComponent = forwardRef((
 
         // Réinitialiser le temps accumulé
         setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
 
         console.log(
           `⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${effectiveAccumulatedTime}s accumulé + ${currentSessionDuration}s actuel)`
@@ -1047,10 +1198,10 @@ const TimerComponent = forwardRef((
         };
       }
       // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
-      else if (!isAutoSave && !isRunning && accumulatedSessionTime > 0) {
+      else if (!isAutoSave && !isRunning && accumulatedSessionTimeValue > 0) {
         const sessionEnd = lastSessionEndTime || Date.now();
         const carriedDuration = carriedSessionDurationRef.current || 0;
-        const effectiveAccumulatedTime = Math.max(accumulatedSessionTime, carriedDuration);
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
 
         totalSessionDuration = effectiveAccumulatedTime;
         finalTotalTime = baseProjectTime + totalSessionDuration;
@@ -1078,6 +1229,7 @@ const TimerComponent = forwardRef((
         carriedSessionDurationRef.current = totalSessionDuration;
 
         setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
 
         console.log(
           `⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}" (dont ${effectiveAccumulatedTime}s accumulés)`
@@ -1100,10 +1252,10 @@ const TimerComponent = forwardRef((
         };
       }
       // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
-      else if (isAutoSave && (currentSessionStart || accumulatedSessionTime > 0)) {
+      else if (isAutoSave && (currentSessionStart || accumulatedSessionTimeValue > 0)) {
         const sessionEnd = Date.now();
         const currentSessionDuration = currentSessionStart ? Math.floor((sessionEnd - currentSessionStart) / 1000) : 0;
-        totalSessionDuration = accumulatedSessionTime + currentSessionDuration;
+        totalSessionDuration = accumulatedSessionTimeValue + currentSessionDuration;
         finalTotalTime = baseProjectTime + totalSessionDuration;
 
         if (totalSessionDuration > 10) {
@@ -1125,8 +1277,9 @@ const TimerComponent = forwardRef((
 
           // Réinitialiser le temps accumulé
           setAccumulatedSessionTime(0);
+          accumulatedSessionTimeRef.current = 0;
 
-          console.log(`💾 Session créée (auto): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
+          console.log(`💾 Session créée (auto): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTimeValue}s accumulé + ${currentSessionDuration}s actuel)`);
         } else {
           console.log(`⏭️ Session auto trop courte (${totalSessionDuration}s), ignorée`);
         }
@@ -1171,6 +1324,7 @@ const TimerComponent = forwardRef((
         cleanupTimer();
         setCurrentSessionStart(null);
         setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
         setBaseProjectTime(finalTotalTime);
         setCurrentTime(finalTotalTime);
         setSessionStartTime(null);
@@ -1887,6 +2041,45 @@ const TimerComponent = forwardRef((
           )}
         </div>
       </div>
+
+      {/* Modal d'inactivité */}
+      {showInactivityModal && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center mb-3">
+              <AlertTriangle className="w-5 h-5 text-warning-500 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900">Pause automatique</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              Aucune activité détectée depuis{' '}
+              <span className="font-medium text-gray-800">{formatDuration(inactivityDurationSeconds)}</span>.
+            </p>
+            <p className="text-sm text-gray-600 mb-6">
+              Êtes-vous encore en train de travailler ?
+              <br />
+              <span className="text-gray-500">
+                En arrêtant, les dernières minutes d'inactivité seront ignorées et la fenêtre de fin de tâche s'ouvrira.
+              </span>
+            </p>
+            <div className="flex flex-col sm:flex-row sm:justify-end sm:space-x-3 space-y-3 sm:space-y-0">
+              <button
+                type="button"
+                onClick={handleInactivityStop}
+                className="w-full sm:w-auto px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Non, arrêter
+              </button>
+              <button
+                type="button"
+                onClick={handleInactivityContinue}
+                className="w-full sm:w-auto btn-primary"
+              >
+                Oui, continuer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de sujet */}
       {showSubjectModal && (
