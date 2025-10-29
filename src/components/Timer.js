@@ -59,6 +59,7 @@ const TimerComponent = forwardRef((
   const activeSessionSubjectRef = useRef('');
   const lastProjectUpdateRef = useRef({ projectId: null, lastSaved: null });
   const lastManualStopRef = useRef(null);
+  const pendingManualStopRef = useRef(null);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -558,6 +559,40 @@ const TimerComponent = forwardRef((
 
       lastManualStopRef.current = null;
 
+      const pendingStop = pendingManualStopRef.current;
+
+      if (pendingStop) {
+        const projectToPersist = {
+          ...pendingStop.updatedProject,
+        };
+
+        if (pendingStop.sessionCreated && pendingStop.newSession && Array.isArray(projectToPersist.workSessions)) {
+          const updatedSessions = projectToPersist.workSessions.map((session) => {
+            if (session.id === pendingStop.newSession.id) {
+              return {
+                ...session,
+                subject: newSubject,
+              };
+            }
+            return session;
+          });
+
+          projectToPersist.workSessions = updatedSessions;
+        }
+
+        projectToPersist.currentSubject = '';
+        projectToPersist.lastSaved = Date.now();
+
+        try {
+          await persistProject(projectToPersist);
+          console.log('✅ Session sauvegardée avec succès');
+        } catch (error) {
+          console.error('❌ Erreur lors de la sauvegarde:', error);
+        }
+      }
+
+      pendingManualStopRef.current = null;
+
       // Réinitialiser seulement les états de session, PAS le temps total
       setCurrentSubject('');
       activeSessionSubjectRef.current = '';
@@ -606,6 +641,7 @@ const TimerComponent = forwardRef((
     setShowSubjectModal(false);
     setPendingConfirmationSubject('');
     setSubjectInput('');
+    pendingManualStopRef.current = null;
 
     if (subjectModalType === 'stop') {
       const lastStop = lastManualStopRef.current;
@@ -1043,9 +1079,18 @@ const TimerComponent = forwardRef((
         lastSaved: Date.now()
       };
 
-      // Sauvegarder le projet
-      await persistProject(updatedProject);
-      console.log('✅ Session sauvegardée avec succès');
+      if (isAutoSave || !sessionCreated) {
+        // Sauvegarder immédiatement pour les arrêts automatiques ou quand aucune session n'a été créée
+        await persistProject(updatedProject);
+        console.log('✅ Session sauvegardée avec succès');
+      } else {
+        // Conserver l'état en attente jusqu'à la confirmation de l'utilisateur
+        pendingManualStopRef.current = {
+          updatedProject,
+          sessionCreated,
+          newSession: sessionCreated ? newSession : null,
+        };
+      }
 
       // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
       if (!isAutoSave) {
