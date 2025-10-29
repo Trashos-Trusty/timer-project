@@ -599,6 +599,15 @@ const TimerComponent = forwardRef((
     }
   };
 
+  const handleSubjectModalCancel = () => {
+    setShowSubjectModal(false);
+    setPendingConfirmationSubject('');
+
+    if (subjectModalType === 'stop') {
+      handleStart();
+    }
+  };
+
   // Fonction supprimée car non utilisée
   // const handleChangeSubject = () => {
   //   setSubjectModalType('change');
@@ -1745,10 +1754,7 @@ const TimerComponent = forwardRef((
             {/* Actions */}
             <div className="flex justify-end space-x-3 mt-6">
               <button
-                onClick={() => {
-                  setShowSubjectModal(false);
-                  setPendingConfirmationSubject('');
-                }}
+                onClick={handleSubjectModalCancel}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
               >
                 Annuler
