@@ -935,6 +935,7 @@ const TimerComponent = forwardRef((
       // Initialiser les sessions mises à jour
       let updatedWorkSessions = [...workSessions];
       let sessionCreated = false;
+      let createdSession = null;
       let totalSessionDuration = 0;
       let finalTotalTime = baseProjectTime;
       const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
@@ -962,6 +963,7 @@ const TimerComponent = forwardRef((
 
         updatedWorkSessions = [...workSessions, newSession];
         sessionCreated = true;
+        createdSession = newSession;
         sessionSubjectForModal = sessionSubject;
         activeSessionSubjectRef.current = sessionSubject;
 
@@ -1008,6 +1010,7 @@ const TimerComponent = forwardRef((
 
         updatedWorkSessions = [...workSessions, newSession];
         sessionCreated = true;
+        createdSession = newSession;
         sessionSubjectForModal = sessionSubject;
         activeSessionSubjectRef.current = sessionSubject;
 
@@ -1051,6 +1054,7 @@ const TimerComponent = forwardRef((
 
           updatedWorkSessions = [...workSessions, newSession];
           sessionCreated = true;
+          createdSession = newSession;
           sessionSubjectForModal = sessionSubject;
           activeSessionSubjectRef.current = sessionSubject;
 
@@ -1088,7 +1092,7 @@ const TimerComponent = forwardRef((
         pendingManualStopRef.current = {
           updatedProject,
           sessionCreated,
-          newSession: sessionCreated ? newSession : null,
+          newSession: createdSession,
         };
       }
 
