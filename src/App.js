@@ -433,27 +433,44 @@ function App() {
 
       if (window.electronAPI) {
         console.log('🔄 Chargement des projets...');
-        const loadedProjects = await window.electronAPI.loadProjects();
-        
+        const rawProjects = await window.electronAPI.loadProjects();
+        const loadedProjects = Array.isArray(rawProjects)
+          ? rawProjects
+          : Array.isArray(rawProjects?.projects)
+            ? rawProjects.projects
+            : [];
+
+        if (!Array.isArray(rawProjects)) {
+          console.warn('⚠️ Réponse inattendue lors du chargement des projets:', rawProjects);
+        }
+
         // Filtrer les doublons par ID - garder le plus récent
         const uniqueProjects = [];
         const projectMap = new Map();
-        
-        (loadedProjects || []).forEach(project => {
+
+        loadedProjects.forEach(project => {
+          if (!project?.id) {
+            return;
+          }
+
           const existingProject = projectMap.get(project.id);
-          if (!existingProject || 
+          if (!existingProject ||
               (project.lastSaved && (!existingProject.lastSaved || project.lastSaved > existingProject.lastSaved))) {
             projectMap.set(project.id, project);
           }
         });
-        
+
         // Convertir la Map en tableau
         projectMap.forEach(project => uniqueProjects.push(project));
-        
+
         // Trier par nom
-        uniqueProjects.sort((a, b) => a.name.localeCompare(b.name));
-        
-        console.log(`📋 Projets chargés: ${loadedProjects?.length || 0} total, ${uniqueProjects.length} uniques`);
+        uniqueProjects.sort((a, b) => {
+          const nameA = (a?.name || '').toString().toLowerCase();
+          const nameB = (b?.name || '').toString().toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+
+        console.log(`📋 Projets chargés: ${loadedProjects.length} total, ${uniqueProjects.length} uniques`);
         setProjects(uniqueProjects);
       }
     } catch (error) {
