@@ -602,7 +602,7 @@ const TimerComponent = forwardRef((
     }
   };
 
-  const handleSubjectModalCancel = () => {
+  const handleSubjectModalCancel = async () => {
     setShowSubjectModal(false);
     setPendingConfirmationSubject('');
     setSubjectInput('');
@@ -615,15 +615,18 @@ const TimerComponent = forwardRef((
           setWorkSessions(lastStop.previousWorkSessions);
         }
 
-        setBaseProjectTime(lastStop.previousBaseProjectTime || 0);
-
-        const restoredSessionDuration = lastStop.totalSessionDuration || 0;
+        const wasRunningBeforeStop = Boolean(lastStop.wasRunningBeforeStop);
+        const restoredAccumulatedSessionTime = wasRunningBeforeStop
+          ? lastStop.totalSessionDuration || 0
+          : lastStop.previousAccumulatedSessionTime || 0;
+        const restoredBaseProjectTime = lastStop.previousBaseProjectTime || 0;
         const restoredTotalTime =
-          typeof lastStop.finalTotalTime === 'number'
-            ? lastStop.finalTotalTime
-            : (lastStop.previousBaseProjectTime || 0) + restoredSessionDuration;
+          typeof lastStop.previousCurrentTime === 'number'
+            ? lastStop.previousCurrentTime
+            : restoredBaseProjectTime + restoredAccumulatedSessionTime;
 
-        setAccumulatedSessionTime(restoredSessionDuration);
+        setBaseProjectTime(restoredBaseProjectTime);
+        setAccumulatedSessionTime(restoredAccumulatedSessionTime);
         setCurrentTime(restoredTotalTime);
         setSessionStartTime(lastStop.previousSessionStartTime || null);
         setLastSessionEndTime(lastStop.previousLastSessionEndTime || null);
@@ -632,14 +635,34 @@ const TimerComponent = forwardRef((
           setCurrentSubject(lastStop.previousSubject);
           activeSessionSubjectRef.current = lastStop.previousSubject;
         }
+
+        try {
+          const restoredProject = {
+            ...selectedProject,
+            currentTime: restoredTotalTime,
+            status: wasRunningBeforeStop ? 'running' : 'paused',
+            currentSubject: lastStop.previousSubject || '',
+            subjectHistory: subjectHistory,
+            sessionStartTime: lastStop.previousSessionStartTime || null,
+            workSessions: lastStop.previousWorkSessions || [],
+            accumulatedSessionTime: restoredAccumulatedSessionTime,
+            lastSaved: Date.now(),
+          };
+
+          await persistProject(restoredProject);
+        } catch (error) {
+          console.error('❌ Erreur lors de la restauration après annulation:', error);
+        }
+
+        if (wasRunningBeforeStop) {
+          setTimeout(() => {
+            handleStart();
+          }, 0);
+        }
       }
 
       lastManualStopRef.current = null;
       setSubjectModalType('start');
-
-      setTimeout(() => {
-        handleStart();
-      }, 0);
     }
   };
 
@@ -920,6 +943,8 @@ const TimerComponent = forwardRef((
           previousSessionStartTime: sessionStartTime,
           previousLastSessionEndTime: lastSessionEndTime,
           previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          previousCurrentTime: currentTime,
+          wasRunningBeforeStop: isRunning,
           sessionSubject: sessionSubjectForModal,
           totalSessionDuration,
           finalTotalTime,
@@ -963,6 +988,8 @@ const TimerComponent = forwardRef((
           previousSessionStartTime: sessionStartTime,
           previousLastSessionEndTime: lastSessionEndTime,
           previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          previousCurrentTime: currentTime,
+          wasRunningBeforeStop: isRunning,
           sessionSubject: sessionSubjectForModal,
           totalSessionDuration,
           finalTotalTime,
