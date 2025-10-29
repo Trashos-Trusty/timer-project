@@ -58,6 +58,7 @@ const TimerComponent = forwardRef((
   const intervalRef = useRef(null);
   const activeSessionSubjectRef = useRef('');
   const lastProjectUpdateRef = useRef({ projectId: null, lastSaved: null });
+  const lastManualStopRef = useRef(null);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -552,8 +553,10 @@ const TimerComponent = forwardRef((
           setSubjectHistory(prev => [newSubject, ...prev.slice(0, 4)]);
         }
       }
-      
+
       console.log('✅ Tâche validée, temps conservé:', currentTime);
+
+      lastManualStopRef.current = null;
 
       // Réinitialiser seulement les états de session, PAS le temps total
       setCurrentSubject('');
@@ -602,9 +605,41 @@ const TimerComponent = forwardRef((
   const handleSubjectModalCancel = () => {
     setShowSubjectModal(false);
     setPendingConfirmationSubject('');
+    setSubjectInput('');
 
     if (subjectModalType === 'stop') {
-      handleStart();
+      const lastStop = lastManualStopRef.current;
+
+      if (lastStop) {
+        if (lastStop.sessionCreated) {
+          setWorkSessions(lastStop.previousWorkSessions);
+        }
+
+        setBaseProjectTime(lastStop.previousBaseProjectTime || 0);
+
+        const restoredSessionDuration = lastStop.totalSessionDuration || 0;
+        const restoredTotalTime =
+          typeof lastStop.finalTotalTime === 'number'
+            ? lastStop.finalTotalTime
+            : (lastStop.previousBaseProjectTime || 0) + restoredSessionDuration;
+
+        setAccumulatedSessionTime(restoredSessionDuration);
+        setCurrentTime(restoredTotalTime);
+        setSessionStartTime(lastStop.previousSessionStartTime || null);
+        setLastSessionEndTime(lastStop.previousLastSessionEndTime || null);
+
+        if (typeof lastStop.previousSubject === 'string') {
+          setCurrentSubject(lastStop.previousSubject);
+          activeSessionSubjectRef.current = lastStop.previousSubject;
+        }
+      }
+
+      lastManualStopRef.current = null;
+      setSubjectModalType('start');
+
+      setTimeout(() => {
+        handleStart();
+      }, 0);
     }
   };
 
@@ -835,8 +870,9 @@ const TimerComponent = forwardRef((
     }
 
     console.log(isAutoSave ? '💾 Sauvegarde automatique à la fermeture/logout' : '⏹️ Arrêt manuel du timer');
-    
+
     try {
+      let manualStopSnapshot = null;
       // Initialiser les sessions mises à jour
       let updatedWorkSessions = [...workSessions];
       let sessionCreated = false;
@@ -874,6 +910,20 @@ const TimerComponent = forwardRef((
         setAccumulatedSessionTime(0);
 
         console.log(`⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTime}s accumulé + ${currentSessionDuration}s actuel)`);
+
+        manualStopSnapshot = {
+          sessionCreated: true,
+          newSession,
+          previousWorkSessions: [...workSessions],
+          previousBaseProjectTime: baseProjectTime,
+          previousAccumulatedSessionTime: accumulatedSessionTime,
+          previousSessionStartTime: sessionStartTime,
+          previousLastSessionEndTime: lastSessionEndTime,
+          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          sessionSubject: sessionSubjectForModal,
+          totalSessionDuration,
+          finalTotalTime,
+        };
       }
       // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
       else if (!isAutoSave && !isRunning && accumulatedSessionTime > 0) {
@@ -903,6 +953,20 @@ const TimerComponent = forwardRef((
         setAccumulatedSessionTime(0);
 
         console.log(`⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}"`);
+
+        manualStopSnapshot = {
+          sessionCreated: true,
+          newSession,
+          previousWorkSessions: [...workSessions],
+          previousBaseProjectTime: baseProjectTime,
+          previousAccumulatedSessionTime: accumulatedSessionTime,
+          previousSessionStartTime: sessionStartTime,
+          previousLastSessionEndTime: lastSessionEndTime,
+          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          sessionSubject: sessionSubjectForModal,
+          totalSessionDuration,
+          finalTotalTime,
+        };
       }
       // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
       else if (isAutoSave && (currentSessionStart || accumulatedSessionTime > 0)) {
@@ -955,9 +1019,10 @@ const TimerComponent = forwardRef((
       // Sauvegarder le projet
       await persistProject(updatedProject);
       console.log('✅ Session sauvegardée avec succès');
-      
+
       // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
       if (!isAutoSave) {
+        lastManualStopRef.current = manualStopSnapshot;
         setWorkSessions(updatedWorkSessions);
         cleanupTimer();
         setCurrentSessionStart(null);
