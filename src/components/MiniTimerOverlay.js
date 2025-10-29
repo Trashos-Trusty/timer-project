@@ -307,6 +307,9 @@ const MiniTimerOverlay = ({
   };
 
   const handleExpandClick = () => {
+    window?.electronAPI?.showMainWindow?.();
+    window?.electronAPI?.setMiniTimerVisibility?.(false);
+
     if (typeof onRequestExpand === 'function') {
       onRequestExpand();
     }
@@ -325,7 +328,7 @@ const MiniTimerOverlay = ({
   const statusTypographyClass = isWindowVariant ? 'gap-0.5 text-[8.5px]' : isCompact ? 'gap-1.5 text-[10px]' : 'gap-2 text-[11px]';
   const stateIndicatorClass = isWindowVariant ? 'h-1.5 w-1.5' : isCompact ? 'h-2.5 w-2.5' : 'h-2.5 w-2.5';
   const innerCircleInsetClass = isWindowVariant ? 'absolute inset-[8px]' : isCompact ? 'absolute inset-[10px]' : 'absolute inset-[12px]';
-  const expandButtonPositionClass = isWindowVariant ? 'absolute top-1.5 right-1.5' : isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
+  const expandButtonPositionClass = isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
   const expandButtonSizeClass = isWindowVariant ? 'h-5 w-5' : isCompact ? 'h-7 w-7' : 'h-8 w-8';
   const expandIconSizeClass = isWindowVariant ? 'h-2.5 w-2.5' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
   const circleContentPaddingClass = isWindowVariant ? 'px-3' : isCompact ? 'px-4' : 'px-6';
@@ -363,6 +366,18 @@ const MiniTimerOverlay = ({
       onPointerDown={isDraggable ? handlePointerDown : undefined}
     >
       <div className={panelClasses}>
+        {isWindowVariant && (
+          <div className="absolute top-2 right-2" style={interactiveStyle}>
+            <button
+              type="button"
+              onClick={handleExpandClick}
+              className={`inline-flex items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition hover:text-primary-600 hover:bg-white ${expandButtonSizeClass}`}
+              aria-label="Ouvrir l'application principale"
+            >
+              <Minimize2 className={expandIconSizeClass} />
+            </button>
+          </div>
+        )}
         <div className={contentClasses} style={interactiveStyle}>
           {showDragHandle && (
             <div className="flex w-full justify-center pb-1" style={dragRegionStyle}>
@@ -414,18 +429,20 @@ const MiniTimerOverlay = ({
             <div
               className={`${innerCircleInsetClass} rounded-full bg-white/95 border border-white/60 shadow-inner`}
             ></div>
-            <div className={expandButtonPositionClass} style={interactiveStyle}>
-              <button
-                type="button"
-                onClick={handleExpandClick}
-                className={`inline-flex items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition hover:text-primary-600 hover:bg-white ${
-                  expandButtonSizeClass
-                }`}
-                aria-label="Ouvrir l'application principale"
-              >
-                <Minimize2 className={expandIconSizeClass} />
-              </button>
-            </div>
+            {!isWindowVariant && (
+              <div className={expandButtonPositionClass} style={interactiveStyle}>
+                <button
+                  type="button"
+                  onClick={handleExpandClick}
+                  className={`inline-flex items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition hover:text-primary-600 hover:bg-white ${
+                    expandButtonSizeClass
+                  }`}
+                  aria-label="Ouvrir l'application principale"
+                >
+                  <Minimize2 className={expandIconSizeClass} />
+                </button>
+              </div>
+            )}
             <div className={circleContentClass}>
               <span
                 className={`${circleLabelClass} uppercase text-gray-400`}
