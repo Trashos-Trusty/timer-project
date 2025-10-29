@@ -150,18 +150,19 @@ const TimerComponent = forwardRef((
         selectedProject.status === 'running' && isSameProject && hasProcessedLastSaved;
 
       if (isRunningSameSessionUpdate) {
-        const projectCurrentTime = selectedProject.currentTime || 0;
-        const projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
+      const projectCurrentTime = selectedProject.currentTime || 0;
 
-        setCurrentTime((previousTime) => Math.max(previousTime, projectCurrentTime));
-        setAccumulatedSessionTime((previousAccumulated) =>
-          Math.max(previousAccumulated, projectAccumulatedTime)
-        );
+      // Garder la valeur la plus élevée pour le temps courant sans toucher au temps accumulé.
+      // Lorsque le backend renvoie la durée de session en cours, elle correspond déjà au
+      // temps écoulé depuis le début de la session. Mettre à jour accumulatedSessionTime ici
+      // provoquerait un double comptage, car currentSessionStart continue de représenter le
+      // début de cette même session. Nous nous contentons donc de synchroniser currentTime.
+      setCurrentTime((previousTime) => Math.max(previousTime, projectCurrentTime));
 
-        lastProjectUpdateRef.current = {
-          projectId: selectedProject.id,
-          lastSaved: projectLastSaved,
-        };
+      lastProjectUpdateRef.current = {
+        projectId: selectedProject.id,
+        lastSaved: projectLastSaved,
+      };
 
         return;
       }
