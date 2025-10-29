@@ -595,6 +595,262 @@ const TimerComponent = forwardRef((
     await handleStart();
   }, [clearInactivityTimeout, handleStart]);
 
+  // Fonction pour sauvegarder automatiquement la session en cours
+  const saveCurrentSession = useCallback(async (isAutoSave = false) => {
+    if (!selectedProject) {
+      console.log('❌ Pas de projet sélectionné pour la sauvegarde');
+      return;
+    }
+
+    // Lors d'une sauvegarde automatique (fermeture/logout), sauvegarder même si le timer n'est pas en cours
+    if (!isAutoSave) {
+      const hasActiveManualSession =
+        (isRunning && currentSessionStart) || (!isRunning && (accumulatedSessionTimeRef.current ?? accumulatedSessionTime) > 0);
+
+      if (!hasActiveManualSession) {
+        console.log('❌ Timer non actif ou pas de session en cours pour la sauvegarde manuelle');
+        return;
+      }
+    }
+
+    console.log(isAutoSave ? '💾 Sauvegarde automatique à la fermeture/logout' : '⏹️ Arrêt manuel du timer');
+
+    const accumulatedSessionTimeValue =
+      typeof accumulatedSessionTimeRef.current === 'number'
+        ? accumulatedSessionTimeRef.current
+        : accumulatedSessionTime;
+
+    try {
+      let manualStopSnapshot = null;
+      // Initialiser les sessions mises à jour
+      let updatedWorkSessions = [...workSessions];
+      let sessionCreated = false;
+      let createdSession = null;
+      let totalSessionDuration = 0;
+      let finalTotalTime = baseProjectTime;
+      const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
+      let sessionSubjectForModal = effectiveSubject || 'Travail général';
+
+      // Pour un arrêt manuel, créer une session avec le temps total accumulé
+      if (!isAutoSave && isRunning && currentSessionStart) {
+        const sessionEnd = Date.now();
+        const currentSessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
+
+        const carriedDuration = carriedSessionDurationRef.current || 0;
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
+
+        // Calculer la durée totale : temps accumulé (y compris les annulations précédentes) + session actuelle
+        totalSessionDuration = effectiveAccumulatedTime + currentSessionDuration;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
+        // Créer une session avec le temps total
+        const sessionSubject = effectiveSubject || 'Travail général';
+        const newSession = {
+          id: `session-${Date.now()}`,
+          subject: sessionSubject,
+          startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
+          endTime: new Date(sessionEnd).toISOString(),
+          duration: totalSessionDuration,
+          date: new Date().toISOString().split('T')[0]
+        };
+
+        updatedWorkSessions = [...workSessions, newSession];
+        sessionCreated = true;
+        createdSession = newSession;
+        sessionSubjectForModal = sessionSubject;
+        activeSessionSubjectRef.current = sessionSubject;
+
+        carriedSessionDurationRef.current = totalSessionDuration;
+
+        // Réinitialiser le temps accumulé
+        setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
+
+        console.log(
+          `⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${effectiveAccumulatedTime}s accumulé + ${currentSessionDuration}s actuel)`
+        );
+
+        manualStopSnapshot = {
+          sessionCreated: true,
+          newSession,
+          previousWorkSessions: [...workSessions],
+          previousBaseProjectTime: baseProjectTime,
+          previousAccumulatedSessionTime: effectiveAccumulatedTime,
+          previousSessionStartTime: sessionStartTime,
+          previousLastSessionEndTime: lastSessionEndTime,
+          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          previousCurrentTime: currentTime,
+          wasRunningBeforeStop: isRunning,
+          sessionSubject: sessionSubjectForModal,
+          totalSessionDuration,
+          finalTotalTime,
+        };
+      }
+      // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
+      else if (!isAutoSave && !isRunning && accumulatedSessionTimeValue > 0) {
+        const sessionEnd = lastSessionEndTime || Date.now();
+        const carriedDuration = carriedSessionDurationRef.current || 0;
+        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
+
+        totalSessionDuration = effectiveAccumulatedTime;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
+        const sessionSubject = effectiveSubject || 'Travail général';
+        const fallbackStart = sessionEnd - totalSessionDuration * 1000;
+        const sessionStartTimestamp = sessionStartTime
+          ? Math.min(sessionStartTime, fallbackStart)
+          : fallbackStart;
+        const newSession = {
+          id: `session-${Date.now()}`,
+          subject: sessionSubject,
+          startTime: new Date(sessionStartTimestamp).toISOString(),
+          endTime: new Date(sessionEnd).toISOString(),
+          duration: totalSessionDuration,
+          date: new Date(sessionEnd).toISOString().split('T')[0]
+        };
+
+        updatedWorkSessions = [...workSessions, newSession];
+        sessionCreated = true;
+        createdSession = newSession;
+        sessionSubjectForModal = sessionSubject;
+        activeSessionSubjectRef.current = sessionSubject;
+
+        carriedSessionDurationRef.current = totalSessionDuration;
+
+        setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
+
+        console.log(
+          `⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}" (dont ${effectiveAccumulatedTime}s accumulés)`
+        );
+
+        manualStopSnapshot = {
+          sessionCreated: true,
+          newSession,
+          previousWorkSessions: [...workSessions],
+          previousBaseProjectTime: baseProjectTime,
+          previousAccumulatedSessionTime: effectiveAccumulatedTime,
+          previousSessionStartTime: sessionStartTime,
+          previousLastSessionEndTime: lastSessionEndTime,
+          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
+          previousCurrentTime: currentTime,
+          wasRunningBeforeStop: isRunning,
+          sessionSubject: sessionSubjectForModal,
+          totalSessionDuration,
+          finalTotalTime,
+        };
+      }
+      // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
+      else if (isAutoSave && (currentSessionStart || accumulatedSessionTimeValue > 0)) {
+        const sessionEnd = Date.now();
+        const currentSessionDuration = currentSessionStart ? Math.floor((sessionEnd - currentSessionStart) / 1000) : 0;
+        totalSessionDuration = accumulatedSessionTimeValue + currentSessionDuration;
+        finalTotalTime = baseProjectTime + totalSessionDuration;
+
+        if (totalSessionDuration > 10) {
+          const sessionSubject = effectiveSubject || 'Travail général';
+          const newSession = {
+            id: `session-${Date.now()}`,
+            subject: sessionSubject,
+            startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
+            endTime: new Date(sessionEnd).toISOString(),
+            duration: totalSessionDuration,
+            date: new Date().toISOString().split('T')[0]
+          };
+
+          updatedWorkSessions = [...workSessions, newSession];
+          sessionCreated = true;
+          createdSession = newSession;
+          sessionSubjectForModal = sessionSubject;
+          activeSessionSubjectRef.current = sessionSubject;
+
+          // Réinitialiser le temps accumulé
+          setAccumulatedSessionTime(0);
+          accumulatedSessionTimeRef.current = 0;
+
+          console.log(`💾 Session créée (auto): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTimeValue}s accumulé + ${currentSessionDuration}s actuel)`);
+        } else {
+          console.log(`⏭️ Session auto trop courte (${totalSessionDuration}s), ignorée`);
+        }
+      } else if (isAutoSave && currentTime > 0) {
+        finalTotalTime = Math.max(currentTime, baseProjectTime);
+        console.log(`💾 Sauvegarde du temps accumulé (${currentTime}s) sans session active`);
+      }
+
+      // Préparer les données du projet mis à jour
+      const updatedProject = {
+        ...selectedProject,
+        currentTime: finalTotalTime,
+        status: 'stopped',
+        currentSubject: currentSubject,
+        subjectHistory: subjectHistory,
+        sessionStartTime: null,
+        workSessions: updatedWorkSessions,
+        accumulatedSessionTime: 0,
+        lastSaved: Date.now()
+      };
+
+      if (isAutoSave || !sessionCreated) {
+        // Sauvegarder immédiatement pour les arrêts automatiques ou quand aucune session n'a été créée
+        await persistProject(updatedProject);
+        console.log('✅ Session sauvegardée avec succès');
+      } else {
+        // Conserver l'état en attente jusqu'à la confirmation de l'utilisateur
+        pendingManualStopRef.current = {
+          updatedProject,
+          sessionCreated,
+          newSession: createdSession,
+        };
+      }
+
+      // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
+      if (!isAutoSave) {
+        lastManualStopRef.current = manualStopSnapshot;
+
+        if (!sessionCreated) {
+          setWorkSessions(updatedWorkSessions);
+        }
+        cleanupTimer();
+        setCurrentSessionStart(null);
+        setAccumulatedSessionTime(0);
+        accumulatedSessionTimeRef.current = 0;
+        setBaseProjectTime(finalTotalTime);
+        setCurrentTime(finalTotalTime);
+        setSessionStartTime(null);
+        setLastSessionEndTime(null);
+
+        // Afficher la modal de confirmation seulement si une session a été créée
+        if (sessionCreated) {
+          setSubjectModalType('stop');
+          setPendingConfirmationSubject(sessionSubjectForModal);
+          setSubjectInput(sessionSubjectForModal);
+          setShowSubjectModal(true);
+        }
+      }
+
+      if (isAutoSave || !sessionCreated) {
+        carriedSessionDurationRef.current = 0;
+      }
+
+    } catch (error) {
+      console.error('❌ Erreur lors de la sauvegarde:', error);
+    }
+  }, [
+    selectedProject,
+    isRunning,
+    currentSessionStart,
+    currentTime,
+    currentSubject,
+    sessionStartTime,
+    subjectHistory,
+    workSessions,
+    cleanupTimer,
+    accumulatedSessionTime,
+    baseProjectTime,
+    persistProject,
+    lastSessionEndTime
+  ]);
+
   const handleInactivityStop = useCallback(async () => {
     const idleSeconds = inactivityContext?.idleSeconds ?? 0;
 
@@ -643,7 +899,7 @@ const TimerComponent = forwardRef((
     const hours = Math.floor(currentTime / 3600);
     const minutes = Math.floor((currentTime % 3600) / 60);
     const seconds = currentTime % 60;
-    
+
     setNewTime({ hours, minutes, seconds });
     setShowTimeEdit(true);
   };
@@ -1105,262 +1361,6 @@ const TimerComponent = forwardRef((
       }
     };
   }, []);
-
-  // Fonction pour sauvegarder automatiquement la session en cours
-  const saveCurrentSession = useCallback(async (isAutoSave = false) => {
-    if (!selectedProject) {
-      console.log('❌ Pas de projet sélectionné pour la sauvegarde');
-      return;
-    }
-
-    // Lors d'une sauvegarde automatique (fermeture/logout), sauvegarder même si le timer n'est pas en cours
-    if (!isAutoSave) {
-      const hasActiveManualSession =
-        (isRunning && currentSessionStart) || (!isRunning && (accumulatedSessionTimeRef.current ?? accumulatedSessionTime) > 0);
-
-      if (!hasActiveManualSession) {
-        console.log('❌ Timer non actif ou pas de session en cours pour la sauvegarde manuelle');
-        return;
-      }
-    }
-
-    console.log(isAutoSave ? '💾 Sauvegarde automatique à la fermeture/logout' : '⏹️ Arrêt manuel du timer');
-
-    const accumulatedSessionTimeValue =
-      typeof accumulatedSessionTimeRef.current === 'number'
-        ? accumulatedSessionTimeRef.current
-        : accumulatedSessionTime;
-
-    try {
-      let manualStopSnapshot = null;
-      // Initialiser les sessions mises à jour
-      let updatedWorkSessions = [...workSessions];
-      let sessionCreated = false;
-      let createdSession = null;
-      let totalSessionDuration = 0;
-      let finalTotalTime = baseProjectTime;
-      const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
-      let sessionSubjectForModal = effectiveSubject || 'Travail général';
-
-      // Pour un arrêt manuel, créer une session avec le temps total accumulé
-      if (!isAutoSave && isRunning && currentSessionStart) {
-        const sessionEnd = Date.now();
-        const currentSessionDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
-
-        const carriedDuration = carriedSessionDurationRef.current || 0;
-        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
-
-        // Calculer la durée totale : temps accumulé (y compris les annulations précédentes) + session actuelle
-        totalSessionDuration = effectiveAccumulatedTime + currentSessionDuration;
-        finalTotalTime = baseProjectTime + totalSessionDuration;
-
-        // Créer une session avec le temps total
-        const sessionSubject = effectiveSubject || 'Travail général';
-        const newSession = {
-          id: `session-${Date.now()}`,
-          subject: sessionSubject,
-          startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
-          endTime: new Date(sessionEnd).toISOString(),
-          duration: totalSessionDuration,
-          date: new Date().toISOString().split('T')[0]
-        };
-
-        updatedWorkSessions = [...workSessions, newSession];
-        sessionCreated = true;
-        createdSession = newSession;
-        sessionSubjectForModal = sessionSubject;
-        activeSessionSubjectRef.current = sessionSubject;
-
-        carriedSessionDurationRef.current = totalSessionDuration;
-
-        // Réinitialiser le temps accumulé
-        setAccumulatedSessionTime(0);
-        accumulatedSessionTimeRef.current = 0;
-
-        console.log(
-          `⏹️ Session créée (arrêt manuel): ${totalSessionDuration}s pour "${newSession.subject}" (${effectiveAccumulatedTime}s accumulé + ${currentSessionDuration}s actuel)`
-        );
-
-        manualStopSnapshot = {
-          sessionCreated: true,
-          newSession,
-          previousWorkSessions: [...workSessions],
-          previousBaseProjectTime: baseProjectTime,
-          previousAccumulatedSessionTime: effectiveAccumulatedTime,
-          previousSessionStartTime: sessionStartTime,
-          previousLastSessionEndTime: lastSessionEndTime,
-          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
-          previousCurrentTime: currentTime,
-          wasRunningBeforeStop: isRunning,
-          sessionSubject: sessionSubjectForModal,
-          totalSessionDuration,
-          finalTotalTime,
-        };
-      }
-      // Arrêt manuel après une pause : finaliser la session avec le temps accumulé
-      else if (!isAutoSave && !isRunning && accumulatedSessionTimeValue > 0) {
-        const sessionEnd = lastSessionEndTime || Date.now();
-        const carriedDuration = carriedSessionDurationRef.current || 0;
-        const effectiveAccumulatedTime = Math.max(accumulatedSessionTimeValue, carriedDuration);
-
-        totalSessionDuration = effectiveAccumulatedTime;
-        finalTotalTime = baseProjectTime + totalSessionDuration;
-
-        const sessionSubject = effectiveSubject || 'Travail général';
-        const fallbackStart = sessionEnd - totalSessionDuration * 1000;
-        const sessionStartTimestamp = sessionStartTime
-          ? Math.min(sessionStartTime, fallbackStart)
-          : fallbackStart;
-        const newSession = {
-          id: `session-${Date.now()}`,
-          subject: sessionSubject,
-          startTime: new Date(sessionStartTimestamp).toISOString(),
-          endTime: new Date(sessionEnd).toISOString(),
-          duration: totalSessionDuration,
-          date: new Date(sessionEnd).toISOString().split('T')[0]
-        };
-
-        updatedWorkSessions = [...workSessions, newSession];
-        sessionCreated = true;
-        createdSession = newSession;
-        sessionSubjectForModal = sessionSubject;
-        activeSessionSubjectRef.current = sessionSubject;
-
-        carriedSessionDurationRef.current = totalSessionDuration;
-
-        setAccumulatedSessionTime(0);
-        accumulatedSessionTimeRef.current = 0;
-
-        console.log(
-          `⏹️ Session finalisée après pause: ${totalSessionDuration}s pour "${newSession.subject}" (dont ${effectiveAccumulatedTime}s accumulés)`
-        );
-
-        manualStopSnapshot = {
-          sessionCreated: true,
-          newSession,
-          previousWorkSessions: [...workSessions],
-          previousBaseProjectTime: baseProjectTime,
-          previousAccumulatedSessionTime: effectiveAccumulatedTime,
-          previousSessionStartTime: sessionStartTime,
-          previousLastSessionEndTime: lastSessionEndTime,
-          previousSubject: (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '',
-          previousCurrentTime: currentTime,
-          wasRunningBeforeStop: isRunning,
-          sessionSubject: sessionSubjectForModal,
-          totalSessionDuration,
-          finalTotalTime,
-        };
-      }
-      // Pour une sauvegarde automatique (logout/fermeture), créer une session avec le temps total si nécessaire
-      else if (isAutoSave && (currentSessionStart || accumulatedSessionTimeValue > 0)) {
-        const sessionEnd = Date.now();
-        const currentSessionDuration = currentSessionStart ? Math.floor((sessionEnd - currentSessionStart) / 1000) : 0;
-        totalSessionDuration = accumulatedSessionTimeValue + currentSessionDuration;
-        finalTotalTime = baseProjectTime + totalSessionDuration;
-
-        if (totalSessionDuration > 10) {
-          const sessionSubject = effectiveSubject || 'Travail général';
-          const newSession = {
-            id: `session-${Date.now()}`,
-            subject: sessionSubject,
-            startTime: new Date(sessionStartTime || currentSessionStart).toISOString(),
-            endTime: new Date(sessionEnd).toISOString(),
-            duration: totalSessionDuration,
-            date: new Date().toISOString().split('T')[0]
-          };
-
-          updatedWorkSessions = [...workSessions, newSession];
-          sessionCreated = true;
-          createdSession = newSession;
-          sessionSubjectForModal = sessionSubject;
-          activeSessionSubjectRef.current = sessionSubject;
-
-          // Réinitialiser le temps accumulé
-          setAccumulatedSessionTime(0);
-          accumulatedSessionTimeRef.current = 0;
-
-          console.log(`💾 Session créée (auto): ${totalSessionDuration}s pour "${newSession.subject}" (${accumulatedSessionTimeValue}s accumulé + ${currentSessionDuration}s actuel)`);
-        } else {
-          console.log(`⏭️ Session auto trop courte (${totalSessionDuration}s), ignorée`);
-        }
-      } else if (isAutoSave && currentTime > 0) {
-        finalTotalTime = Math.max(currentTime, baseProjectTime);
-        console.log(`💾 Sauvegarde du temps accumulé (${currentTime}s) sans session active`);
-      }
-
-      // Préparer les données du projet mis à jour
-      const updatedProject = {
-        ...selectedProject,
-        currentTime: finalTotalTime,
-        status: 'stopped',
-        currentSubject: currentSubject,
-        subjectHistory: subjectHistory,
-        sessionStartTime: null,
-        workSessions: updatedWorkSessions,
-        accumulatedSessionTime: 0,
-        lastSaved: Date.now()
-      };
-
-      if (isAutoSave || !sessionCreated) {
-        // Sauvegarder immédiatement pour les arrêts automatiques ou quand aucune session n'a été créée
-        await persistProject(updatedProject);
-        console.log('✅ Session sauvegardée avec succès');
-      } else {
-        // Conserver l'état en attente jusqu'à la confirmation de l'utilisateur
-        pendingManualStopRef.current = {
-          updatedProject,
-          sessionCreated,
-          newSession: createdSession,
-        };
-      }
-
-      // Mettre à jour l'état local seulement si ce n'est pas une sauvegarde automatique
-      if (!isAutoSave) {
-        lastManualStopRef.current = manualStopSnapshot;
-
-        if (!sessionCreated) {
-          setWorkSessions(updatedWorkSessions);
-        }
-        cleanupTimer();
-        setCurrentSessionStart(null);
-        setAccumulatedSessionTime(0);
-        accumulatedSessionTimeRef.current = 0;
-        setBaseProjectTime(finalTotalTime);
-        setCurrentTime(finalTotalTime);
-        setSessionStartTime(null);
-        setLastSessionEndTime(null);
-
-        // Afficher la modal de confirmation seulement si une session a été créée
-        if (sessionCreated) {
-          setSubjectModalType('stop');
-          setPendingConfirmationSubject(sessionSubjectForModal);
-          setSubjectInput(sessionSubjectForModal);
-          setShowSubjectModal(true);
-        }
-      }
-
-      if (isAutoSave || !sessionCreated) {
-        carriedSessionDurationRef.current = 0;
-      }
-
-    } catch (error) {
-      console.error('❌ Erreur lors de la sauvegarde:', error);
-    }
-  }, [
-    selectedProject,
-    isRunning,
-    currentSessionStart,
-    currentTime,
-    currentSubject,
-    sessionStartTime,
-    subjectHistory,
-    workSessions,
-    cleanupTimer,
-    accumulatedSessionTime,
-    baseProjectTime,
-    persistProject,
-    lastSessionEndTime
-  ]);
 
   // Exposer la fonction saveCurrentSession au composant parent
   useImperativeHandle(
