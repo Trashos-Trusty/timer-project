@@ -420,14 +420,14 @@ const MiniTimerOverlay = ({
             onDoubleClick={onToggleCollapse}
           >
             <div
-              className={`absolute inset-0 rounded-full bg-gradient-to-br ${
+              className={`pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br ${
                 isRunning
                   ? 'from-green-200/80 via-green-100/70 to-white/80'
                   : 'from-gray-200/70 via-gray-100/60 to-white/80'
               }`}
             ></div>
             <div
-              className={`${innerCircleInsetClass} rounded-full bg-white/95 border border-white/60 shadow-inner`}
+              className={`pointer-events-none ${innerCircleInsetClass} rounded-full bg-white/95 border border-white/60 shadow-inner`}
             ></div>
             {!isWindowVariant && (
               <div className={expandButtonPositionClass} style={interactiveStyle}>
