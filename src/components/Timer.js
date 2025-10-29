@@ -34,6 +34,7 @@ const TimerComponent = forwardRef((
   const [currentSessionStart, setCurrentSessionStart] = useState(null);
   const [accumulatedSessionTime, setAccumulatedSessionTime] = useState(0); // Temps accumulé avant pause(s)
   const [baseProjectTime, setBaseProjectTime] = useState(0); // Temps total déjà sauvegardé pour le projet
+  const [shouldRestartAfterCancel, setShouldRestartAfterCancel] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [showTodaySummary, setShowTodaySummary] = useState(true);
   const [showAllTodaySessions, setShowAllTodaySessions] = useState(false);
@@ -61,6 +62,9 @@ const TimerComponent = forwardRef((
   const lastManualStopRef = useRef(null);
   const pendingManualStopRef = useRef(null);
   const carriedSessionDurationRef = useRef(0);
+  const baseProjectTimeRef = useRef(baseProjectTime);
+  const accumulatedSessionTimeRef = useRef(accumulatedSessionTime);
+  const pendingRestartAfterCancelRef = useRef(false);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -89,7 +93,9 @@ const TimerComponent = forwardRef((
     try {
       setIsRunning(true);
 
-      const totalTime = baseProjectTime + accumulatedSessionTime;
+      const currentBaseProjectTime = baseProjectTimeRef.current;
+      const currentAccumulatedSessionTime = accumulatedSessionTimeRef.current;
+      const totalTime = currentBaseProjectTime + currentAccumulatedSessionTime;
 
       const currentSubjectClean = currentSubject ? currentSubject.trim() : '';
       const activeSubjectClean = activeSessionSubjectRef.current ? activeSessionSubjectRef.current.trim() : '';
@@ -103,15 +109,23 @@ const TimerComponent = forwardRef((
         sessionStartTime: sessionStartTime,
         subjectHistory: subjectHistory,
         workSessions: workSessions,
-        accumulatedSessionTime: accumulatedSessionTime,
+        accumulatedSessionTime: currentAccumulatedSessionTime,
         lastSaved: Date.now()
       };
-      
+
       await persistProject(updatedProject);
     } catch (error) {
       console.error('Erreur lors du démarrage:', error);
     }
-  }, [selectedProject, baseProjectTime, currentSubject, sessionStartTime, subjectHistory, workSessions, accumulatedSessionTime, persistProject]);
+  }, [selectedProject, currentSubject, sessionStartTime, subjectHistory, workSessions, persistProject]);
+
+  useEffect(() => {
+    baseProjectTimeRef.current = baseProjectTime;
+  }, [baseProjectTime]);
+
+  useEffect(() => {
+    accumulatedSessionTimeRef.current = accumulatedSessionTime;
+  }, [accumulatedSessionTime]);
 
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
@@ -367,9 +381,9 @@ const TimerComponent = forwardRef((
     };
   }, [isRunning, selectedProject, currentSessionStart, accumulatedSessionTime, baseProjectTime, updateProjectTime]);
 
-  const handleStart = async () => {
+  const handleStart = useCallback(async () => {
     if (!selectedProject || isRunning) return;
-    
+
     // Si pas de sujet défini, demander
     if (!currentSubject || currentSubject.trim() === '') {
       setSubjectModalType('start');
@@ -380,15 +394,15 @@ const TimerComponent = forwardRef((
     }
 
     console.log('▶️ Démarrage/reprise du timer pour:', currentSubject, 'temps accumulé:', accumulatedSessionTime);
-    
+
     // Nettoyer tout timer existant avant de démarrer
     cleanupTimer();
-    
+
     // Enregistrer le début de la nouvelle session (reprise ou démarrage)
     const now = Date.now();
     setCurrentSessionStart(now);
     setLastSessionEndTime(null);
-    
+
     // Définir sessionStartTime seulement si c'est un tout premier démarrage
     if (!sessionStartTime) {
       setSessionStartTime(now);
@@ -396,9 +410,27 @@ const TimerComponent = forwardRef((
     } else {
       console.log('▶️ Reprise après pause, temps déjà accumulé:', accumulatedSessionTime);
     }
-    
+
     await startTimer();
-  };
+  }, [
+    selectedProject,
+    isRunning,
+    currentSubject,
+    accumulatedSessionTime,
+    cleanupTimer,
+    sessionStartTime,
+    startTimer
+  ]);
+
+  useEffect(() => {
+    if (!shouldRestartAfterCancel || !pendingRestartAfterCancelRef.current) {
+      return;
+    }
+
+    pendingRestartAfterCancelRef.current = false;
+    setShouldRestartAfterCancel(false);
+    handleStart();
+  }, [shouldRestartAfterCancel, handleStart]);
 
   const handlePause = async () => {
     if (!selectedProject || !isRunning) return;
@@ -678,6 +710,9 @@ const TimerComponent = forwardRef((
           carriedSessionDurationRef.current = lastStop.totalSessionDuration;
         }
 
+        baseProjectTimeRef.current = restoredBaseProjectTime;
+        accumulatedSessionTimeRef.current = restoredAccumulatedSessionTime;
+
         setBaseProjectTime(restoredBaseProjectTime);
         setAccumulatedSessionTime(restoredAccumulatedSessionTime);
         setCurrentTime(restoredTotalTime);
@@ -708,9 +743,8 @@ const TimerComponent = forwardRef((
         }
 
         if (wasRunningBeforeStop) {
-          setTimeout(() => {
-            handleStart();
-          }, 0);
+          pendingRestartAfterCancelRef.current = true;
+          setShouldRestartAfterCancel(true);
         }
       }
 
