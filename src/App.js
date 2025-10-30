@@ -716,6 +716,36 @@ function App() {
     setShowProjectModal(true);
   };
 
+  const handleProjectUpdate = useCallback((updatedProject) => {
+    if (!updatedProject || !updatedProject.id) {
+      return;
+    }
+
+    setProjects((prevProjects) => {
+      let found = false;
+      const updatedProjects = prevProjects.map((project) => {
+        if (project.id === updatedProject.id) {
+          found = true;
+          return { ...project, ...updatedProject };
+        }
+        return project;
+      });
+
+      if (!found) {
+        return [...prevProjects, updatedProject];
+      }
+
+      return updatedProjects;
+    });
+
+    setSelectedProject((prevSelected) => {
+      if (prevSelected?.id === updatedProject.id) {
+        return { ...prevSelected, ...updatedProject };
+      }
+      return prevSelected;
+    });
+  }, []);
+
   const handleSaveProject = async (projectData) => {
     try {
       console.log('💾 Données projet avant sauvegarde:', projectData);
@@ -761,7 +791,14 @@ function App() {
       console.log('🚀 Appel window.electronAPI.saveProject...');
       const result = await window.electronAPI.saveProject(projectData, originalName);
       console.log('✅ Réponse de window.electronAPI.saveProject:', result);
-      
+
+      const mergedProject = {
+        ...projectData,
+        ...(result && typeof result === 'object' ? result : {})
+      };
+
+      handleProjectUpdate(mergedProject);
+
       // Recharger SEULEMENT pour les nouveaux projets pour qu'ils apparaissent dans la liste
       if (isNewProject) {
         console.log('🔄 Rechargement après création de nouveau projet');
@@ -808,36 +845,6 @@ function App() {
   const handleSelectProject = (project) => {
     setSelectedProject(project);
   };
-
-  const handleProjectUpdate = useCallback((updatedProject) => {
-    if (!updatedProject || !updatedProject.id) {
-      return;
-    }
-
-    setProjects((prevProjects) => {
-      let found = false;
-      const updatedProjects = prevProjects.map((project) => {
-        if (project.id === updatedProject.id) {
-          found = true;
-          return { ...project, ...updatedProject };
-        }
-        return project;
-      });
-
-      if (!found) {
-        return [...prevProjects, updatedProject];
-      }
-
-      return updatedProjects;
-    });
-
-    setSelectedProject((prevSelected) => {
-      if (prevSelected?.id === updatedProject.id) {
-        return { ...prevSelected, ...updatedProject };
-      }
-      return prevSelected;
-    });
-  }, []);
 
   const handleApiConfigSave = async () => {
     setIsApiConfigured(true);
