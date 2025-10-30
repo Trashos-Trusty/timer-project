@@ -3,7 +3,7 @@ import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow, A
 import connectionManager from '../connectionManager';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
-const INACTIVITY_THRESHOLD_MS = 1 * 60 * 1000;
+const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000;
 
 const TimerComponent = forwardRef((
   {
