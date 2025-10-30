@@ -68,6 +68,8 @@ const TimerComponent = forwardRef((
   const carriedSessionDurationRef = useRef(0);
   const baseProjectTimeRef = useRef(baseProjectTime);
   const accumulatedSessionTimeRef = useRef(accumulatedSessionTime);
+  const currentTimeRef = useRef(currentTime);
+  const isRunningRef = useRef(isRunning);
   const pendingRestartAfterCancelRef = useRef(false);
   const inactivityTimeoutRef = useRef(null);
   const lastInteractionRef = useRef(Date.now());
@@ -144,6 +146,14 @@ const TimerComponent = forwardRef((
     accumulatedSessionTimeRef.current = accumulatedSessionTime;
   }, [accumulatedSessionTime]);
 
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
       console.log('❌ Aucun projet sélectionné');
@@ -210,9 +220,34 @@ const TimerComponent = forwardRef((
       }
       
       // Initialiser les états avec les données du projet
-      const projectCurrentTime = selectedProject.currentTime || 0;
-      const projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
-      const baseTime = Math.max(0, projectCurrentTime - projectAccumulatedTime);
+      let projectCurrentTime = selectedProject.currentTime || 0;
+      let projectAccumulatedTime = selectedProject.accumulatedSessionTime || 0;
+      const previousCurrentTime = currentTimeRef.current ?? 0;
+      const previousAccumulatedTime = accumulatedSessionTimeRef.current ?? 0;
+      const previousBaseTime = baseProjectTimeRef.current ?? 0;
+      const wasRunning = isRunningRef.current;
+
+      if (isSameProject && wasRunning) {
+        if (projectCurrentTime < previousCurrentTime) {
+          console.warn('⚠️ Mise à jour reçue avec un temps inférieur au temps local, rollback ignoré', {
+            received: projectCurrentTime,
+            local: previousCurrentTime,
+          });
+          projectCurrentTime = previousCurrentTime;
+        }
+
+        if (projectAccumulatedTime < previousAccumulatedTime) {
+          projectAccumulatedTime = previousAccumulatedTime;
+        }
+      }
+
+      projectAccumulatedTime = Math.min(projectCurrentTime, Math.max(projectAccumulatedTime, 0));
+
+      let baseTime = Math.max(0, projectCurrentTime - projectAccumulatedTime);
+
+      if (isSameProject && wasRunning && baseTime < previousBaseTime) {
+        baseTime = previousBaseTime;
+      }
 
       setBaseProjectTime(baseTime);
       setCurrentTime(projectCurrentTime);
