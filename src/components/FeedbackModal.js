@@ -33,6 +33,7 @@ const FeedbackModal = ({ onClose, onSubmit, freelanceInfo }) => {
   const [email, setEmail] = useState(freelanceInfo?.email || '');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
   const handleSubmit = async (event) => {
@@ -50,6 +51,7 @@ const FeedbackModal = ({ onClose, onSubmit, freelanceInfo }) => {
 
     setIsSending(true);
     setError('');
+    setErrorCode(null);
 
     try {
       await onSubmit({
@@ -62,7 +64,9 @@ const FeedbackModal = ({ onClose, onSubmit, freelanceInfo }) => {
       const friendlyMessage =
         submitError?.message ||
         "Impossible d'envoyer le feedback. Vous pouvez également nous écrire directement par email.";
+
       setError(friendlyMessage);
+      setErrorCode(submitError?.code || null);
     } finally {
       setIsSending(false);
     }
@@ -206,6 +210,11 @@ const FeedbackModal = ({ onClose, onSubmit, freelanceInfo }) => {
               <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
               <div className="text-sm">
                 <p>{error}</p>
+                {errorCode === 'FEEDBACK_ENDPOINT_NOT_FOUND' && (
+                  <p className="mt-2 text-xs text-danger-700">
+                    Assurez-vous que l'URL API configurée pointe vers le fichier <code>api-timer.php</code> le plus récent sur votre serveur OVH.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={handleOpenEmailFallback}
