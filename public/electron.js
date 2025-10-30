@@ -152,6 +152,26 @@ function createWindow() {
 
 // Menu de l'application
 function createMenu() {
+  const viewSubmenu = [
+    { role: 'reload', label: 'Actualiser' },
+    { role: 'forcereload', label: 'Actualiser (force)' }
+  ];
+
+  if (isDev) {
+    viewSubmenu.push({ role: 'toggledevtools', label: 'Outils de développement' });
+  }
+
+  viewSubmenu.push({ type: 'separator' });
+
+  viewSubmenu.push(
+    { role: 'resetzoom', label: 'Zoom normal' },
+    { role: 'zoomin', label: 'Zoom avant' },
+    { role: 'zoomout', label: 'Zoom arrière' }
+  );
+
+  viewSubmenu.push({ type: 'separator' });
+  viewSubmenu.push({ role: 'togglefullscreen', label: 'Plein écran' });
+
   const template = [
     {
       label: 'Fichier',
@@ -186,17 +206,7 @@ function createMenu() {
     },
     {
       label: 'Affichage',
-      submenu: [
-        { role: 'reload', label: 'Actualiser' },
-        { role: 'forcereload', label: 'Actualiser (force)' },
-        { role: 'toggledevtools', label: 'Outils de développement' },
-        { type: 'separator' },
-        { role: 'resetzoom', label: 'Zoom normal' },
-        { role: 'zoomin', label: 'Zoom avant' },
-        { role: 'zoomout', label: 'Zoom arrière' },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: 'Plein écran' }
-      ]
+      submenu: viewSubmenu
     }
   ];
 
