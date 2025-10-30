@@ -908,10 +908,16 @@ function App() {
       });
 
       if (!result?.success) {
-        throw new Error(
+        const error = new Error(
           result?.message ||
             `Impossible d'envoyer le feedback pour le moment. Vous pouvez nous écrire à ${FEEDBACK_FALLBACK_EMAIL}.`
         );
+
+        if (result?.code) {
+          error.code = result.code;
+        }
+
+        throw error;
       }
 
       return result;

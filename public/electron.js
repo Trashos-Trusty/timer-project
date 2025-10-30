@@ -407,7 +407,11 @@ ipcMain.handle('test-api-connection', async () => {
     return result;
   } catch (error) {
     console.error('Erreur lors du test API:', error);
-    return { success: false, message: error.message };
+    return {
+      success: false,
+      message: error.message,
+      code: error.code || null
+    };
   }
 });
 
@@ -481,7 +485,11 @@ ipcMain.handle('send-feedback', async (event, feedbackData) => {
     return { success: true, data: result };
   } catch (error) {
     console.error('Erreur lors de l\'envoi du feedback:', error);
-    return { success: false, message: error.message };
+    return {
+      success: false,
+      message: error.message,
+      code: error.code || null
+    };
   }
 });
 

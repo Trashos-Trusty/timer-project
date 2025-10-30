@@ -412,17 +412,33 @@ class ApiManager {
         sent_at: feedback?.sentAt || new Date().toISOString()
       };
 
-      const response = await this.makeSecureRequest('feedback', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      let response;
+
+      try {
+        response = await this.makeSecureRequest('feedback', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      } catch (error) {
+        if (error?.message && error.message.includes('404')) {
+          const friendlyError = new Error(
+            "Le serveur n'a pas reconnu la route de feedback. Vérifiez que votre URL API pointe bien vers le fichier `api-timer.php` à jour ou utilisez l'envoi par email."
+          );
+          friendlyError.code = 'FEEDBACK_ENDPOINT_NOT_FOUND';
+          throw friendlyError;
+        }
+
+        throw error;
+      }
 
       if (response.success) {
         console.log('✅ Feedback envoyé avec succès');
         return response.data || true;
       }
 
-      throw new Error(response.message || 'Erreur lors de l\'envoi du feedback');
+      const apiError = new Error(response.message || 'Erreur lors de l\'envoi du feedback');
+      apiError.code = response.code || null;
+      throw apiError;
     }, 'sendFeedback');
   }
 
