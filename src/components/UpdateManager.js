@@ -497,13 +497,38 @@ const extractNoteText = (note) => {
   }
 
   if (typeof note === 'object') {
-    const versionLabel = note.version ? `Version ${note.version}` : '';
-    const rawText = note.note || note.body || '';
-    const combined = [versionLabel, rawText].filter(Boolean).join('\n');
-    return combined;
+    return note.note || note.body || note.releaseNotes || note.releaseName || '';
   }
 
   return '';
+};
+
+const extractSummarySection = (text) => {
+  if (!text) {
+    return '';
+  }
+
+  const summaryHeadingPattern = /(?:^|\n)#{1,6}\s*(?:Summary|Résumé|Release Summary)\s*(?:\r?\n)+([\s\S]*?)(?=(?:\n#{1,6}\s+)|$)/i;
+  const summaryMatch = text.match(summaryHeadingPattern);
+
+  if (summaryMatch && summaryMatch[1]) {
+    return summaryMatch[1].trim();
+  }
+
+  const boldSummaryPattern = /\*\*\s*(?:Summary|Résumé)\s*\*\*\s*:?[ \t]*([\s\S]*?)(?=(?:\n\*\*|$))/i;
+  const boldSummaryMatch = text.match(boldSummaryPattern);
+
+  if (boldSummaryMatch && boldSummaryMatch[1]) {
+    return boldSummaryMatch[1].trim();
+  }
+
+  const whatsChangedIndex = text.search(/(?:^|\n)#{1,6}\s*What's Changed\b/i);
+  if (whatsChangedIndex > 0) {
+    return text.slice(0, whatsChangedIndex).trim();
+  }
+
+  const firstParagraph = text.split(/\n{2,}/)[0]?.trim();
+  return firstParagraph || '';
 };
 
 const sanitizeReleaseNote = (note) => {
@@ -514,11 +539,14 @@ const sanitizeReleaseNote = (note) => {
 
   const withBreaks = replaceHtmlLineBreaks(noteText);
   const withoutTags = stripHtmlTags(withBreaks);
-  return decodeHtmlEntities(withoutTags)
+  const decoded = decodeHtmlEntities(withoutTags)
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  const summaryOnly = extractSummarySection(decoded);
+  return (summaryOnly || decoded).trim();
 };
 
 const formatReleaseNotes = (releaseNotes) => {
