@@ -51,7 +51,7 @@ const Header = ({
             <Zap className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Timer Project</h1>
+            <h1 className="text-xl font-bold text-gray-900">TrustyTimer</h1>
             <p className="text-sm text-gray-500">
               {freelanceInfo ? `Bonjour ${freelanceInfo.name}` : 'Gestionnaire de temps de projet'}
             </p>
