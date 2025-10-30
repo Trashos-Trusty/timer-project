@@ -544,22 +544,11 @@ const TimerComponent = forwardRef((
     clearInactivityTimeout
   ]);
 
-  const resetInactivityTimer = useCallback(() => {
-    clearInactivityTimeout();
+  const handleInactivityTimeoutRef = useRef(handleInactivityTimeout);
 
-    if (!isRunning || showInactivityModal) {
-      return;
-    }
-
-    inactivityTimeoutRef.current = setTimeout(() => {
-      handleInactivityTimeout();
-    }, INACTIVITY_THRESHOLD_MS);
-  }, [clearInactivityTimeout, isRunning, showInactivityModal, handleInactivityTimeout]);
-
-  const handleUserActivity = useCallback(() => {
-    lastInteractionRef.current = Date.now();
-    resetInactivityTimer();
-  }, [resetInactivityTimer]);
+  useEffect(() => {
+    handleInactivityTimeoutRef.current = handleInactivityTimeout;
+  }, [handleInactivityTimeout]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -571,16 +560,25 @@ const TimerComponent = forwardRef((
       return undefined;
     }
 
+    const scheduleInactivityCheck = () => {
+      clearInactivityTimeout();
+      inactivityTimeoutRef.current = setTimeout(() => {
+        handleInactivityTimeoutRef.current();
+      }, INACTIVITY_THRESHOLD_MS);
+    };
+
     const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'];
     const activityHandler = () => {
-      handleUserActivity();
+      lastInteractionRef.current = Date.now();
+      scheduleInactivityCheck();
     };
 
     activityEvents.forEach((event) => {
       window.addEventListener(event, activityHandler, { passive: true });
     });
 
-    handleUserActivity();
+    lastInteractionRef.current = Date.now();
+    scheduleInactivityCheck();
 
     return () => {
       activityEvents.forEach((event) => {
@@ -588,7 +586,7 @@ const TimerComponent = forwardRef((
       });
       clearInactivityTimeout();
     };
-  }, [isRunning, showInactivityModal, handleUserActivity, clearInactivityTimeout]);
+  }, [isRunning, showInactivityModal, clearInactivityTimeout]);
 
   const handleStop = async () => {
     if (!selectedProject || !hasPendingSession) {
