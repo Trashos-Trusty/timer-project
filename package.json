@@ -50,8 +50,8 @@
   },
   "build": {
     "appId": "com.timerproject.app",
-    "productName": "Timer Project",
-    "copyright": "Copyright © 2025 Timer Project",
+    "productName": "TrustyTimer",
+    "copyright": "Copyright © 2025 TrustyTimer",
     "icon": "assets/icon.ico",
     "directories": {
       "output": "dist"
@@ -98,7 +98,7 @@
           ]
         }
       ],
-      "publisherName": "Timer Project",
+      "publisherName": "TrustyTimer",
       "verifyUpdateCodeSignature": false
     },
     "linux": {

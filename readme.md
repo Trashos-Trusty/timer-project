@@ -1,8 +1,8 @@
-# 🚀 Timer Project
+# 🚀 TrustyTimer
 
 ## 📋 Description
 
-**Timer Project** est une application de gestion du temps développée en **Electron** qui permet de suivre précisément le temps de travail sur différents projets. L'application offre une interface moderne et intuitive pour la gestion de projets avec un système de chronométrage avancé.
+**TrustyTimer** est une application de gestion du temps développée en **Electron** qui permet de suivre précisément le temps de travail sur différents projets. L'application offre une interface moderne et intuitive pour la gestion de projets avec un système de chronométrage avancé.
 
 ## ✨ Fonctionnalités Principales
 

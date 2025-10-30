@@ -77,8 +77,8 @@ const FeedbackModal = ({ onClose, onSubmit, freelanceInfo }) => {
       return;
     }
 
-    const subject = encodeURIComponent('Feedback Timer Project');
-    const body = encodeURIComponent(`${message}\n\n--\nEnvoyé depuis Timer Project`);
+    const subject = encodeURIComponent('Feedback TrustyTimer');
+    const body = encodeURIComponent(`${message}\n\n--\nEnvoyé depuis TrustyTimer`);
     window.electronAPI.openExternal(`mailto:${FALLBACK_EMAIL}?subject=${subject}&body=${body}`);
   };
 
