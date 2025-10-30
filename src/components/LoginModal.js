@@ -154,7 +154,7 @@ const LoginModal = ({ onLogin }) => {
           <div className="flex items-center justify-center w-16 h-16 bg-primary-600 rounded-xl mx-auto mb-4">
             <Zap className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Timer Project</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">TrustyTimer</h2>
           <p className="text-gray-600">Connectez-vous pour accéder à l'application</p>
         </div>
 

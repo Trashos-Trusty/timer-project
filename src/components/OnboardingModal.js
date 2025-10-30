@@ -46,7 +46,7 @@ const OnboardingModal = ({ onComplete }) => {
         <div className="p-8">
           <div className="mb-6 flex items-center space-x-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-2xl">👋</span>
-            <h2 className="text-2xl font-semibold text-gray-900">Bienvenue dans Timer Project</h2>
+            <h2 className="text-2xl font-semibold text-gray-900">Bienvenue dans TrustyTimer</h2>
           </div>
           <p className="mb-8 text-gray-600">
             Découvre comment démarrer en quelques étapes simples.

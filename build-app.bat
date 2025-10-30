@@ -15,7 +15,7 @@ call npm run dist
 echo.
 echo ✅ Build termine !
 echo Les fichiers sont dans le dossier "dist":
-echo - Timer Project Setup 1.0.0.exe (installateur)
+echo - TrustyTimer Setup 1.0.0.exe (installateur)
 echo - win-unpacked/ (version portable)
 echo.
 
