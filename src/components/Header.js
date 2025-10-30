@@ -160,9 +160,16 @@ const Header = ({
             </button>
             
             <button
-              onClick={() => onOpenFeedback && onOpenFeedback()}
-              className="btn-secondary flex items-center space-x-2 border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100"
-              title="Partager un retour ou signaler un bug"
+              onClick={() => !isTimerRunning && onOpenFeedback && onOpenFeedback()}
+              disabled={isTimerRunning}
+              className={`btn-secondary flex items-center space-x-2 border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 ${
+                isTimerRunning ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={
+                isTimerRunning
+                  ? 'Veuillez stopper le chronomètre avant de partager un feedback'
+                  : 'Partager un retour ou signaler un bug'
+              }
             >
               <MessageCircle className="w-4 h-4" />
               <span className="hidden md:inline">Feedback</span>
