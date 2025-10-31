@@ -10,7 +10,7 @@ import {
   Download,
   MessageCircle
 } from 'lucide-react';
-import logo from '../../assets/trustytimer-logo.png';
+import logo from '../assets/trustytimer-logo.png';
 
 const Header = ({ 
   currentView, 
