@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor } = require('electron');
 const path = require('path');
 
 // Remplacer electron-is-dev par une vérification simple
@@ -573,6 +573,25 @@ ipcMain.handle('minimize-main-window', async () => {
   } catch (error) {
     console.error('Erreur lors de la réduction de la fenêtre principale:', error);
     return false;
+  }
+});
+
+ipcMain.handle('get-system-idle-time', async () => {
+  try {
+    if (!powerMonitor || typeof powerMonitor.getSystemIdleTime !== 'function') {
+      return null;
+    }
+
+    const idleTime = powerMonitor.getSystemIdleTime();
+
+    if (typeof idleTime === 'number' && Number.isFinite(idleTime) && idleTime >= 0) {
+      return idleTime;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Erreur lors de la récupération du temps d\'inactivité système:', error);
+    return null;
   }
 });
 

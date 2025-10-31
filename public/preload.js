@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateMiniTimerSnapshot: (snapshot) => ipcRenderer.send('mini-timer-snapshot', snapshot),
   requestMiniTimerSnapshot: () => ipcRenderer.invoke('request-mini-timer-snapshot'),
   showMainWindow: () => ipcRenderer.invoke('show-main-window'),
+  getSystemIdleTime: () => ipcRenderer.invoke('get-system-idle-time'),
   triggerMiniTimerAction: (payload) => ipcRenderer.invoke('mini-timer-action', payload),
   onMiniTimerAction: (callback) => {
     const handler = (_event, data) => callback(data);

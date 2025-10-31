@@ -4,6 +4,7 @@ import connectionManager from '../connectionManager';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000;
+const INACTIVITY_THRESHOLD_SECONDS = Math.floor(INACTIVITY_THRESHOLD_MS / 1000);
 
 const TimerComponent = forwardRef((
   {
@@ -58,7 +59,7 @@ const TimerComponent = forwardRef((
     accumulatedSessionTime > 0 ||
     currentSessionElapsed > 0
   );
-  const inactivityDurationSeconds = inactivityContext?.idleSeconds ?? Math.floor(INACTIVITY_THRESHOLD_MS / 1000);
+  const inactivityDurationSeconds = inactivityContext?.idleSeconds ?? INACTIVITY_THRESHOLD_SECONDS;
 
   const intervalRef = useRef(null);
   const activeSessionSubjectRef = useRef('');
@@ -72,6 +73,7 @@ const TimerComponent = forwardRef((
   const isRunningRef = useRef(isRunning);
   const pendingRestartAfterCancelRef = useRef(false);
   const inactivityTimeoutRef = useRef(null);
+  const scheduleInactivityCheckRef = useRef(() => {});
   const lastInteractionRef = useRef(Date.now());
 
   // Fonction pour nettoyer complètement l'état du timer
@@ -106,6 +108,26 @@ const TimerComponent = forwardRef((
       clearTimeout(inactivityTimeoutRef.current);
       inactivityTimeoutRef.current = null;
     }
+  }, []);
+
+  const getSystemIdleSeconds = useCallback(async () => {
+    const fallbackIdle = Math.max(0, Math.floor((Date.now() - lastInteractionRef.current) / 1000));
+
+    if (!window?.electronAPI?.getSystemIdleTime) {
+      return fallbackIdle;
+    }
+
+    try {
+      const idleTime = await window.electronAPI.getSystemIdleTime();
+
+      if (typeof idleTime === 'number' && idleTime >= 0) {
+        return Math.floor(idleTime);
+      }
+    } catch (error) {
+      console.error('Impossible de récupérer le temps d\'inactivité système:', error);
+    }
+
+    return fallbackIdle;
   }, []);
 
   const startTimer = useCallback(async () => {
@@ -555,7 +577,19 @@ const TimerComponent = forwardRef((
       const now = Date.now();
       const sessionDuration = currentSessionStart ? Math.floor((now - currentSessionStart) / 1000) : 0;
       const previousAccumulated = accumulatedSessionTimeRef.current || 0;
-      const idleSeconds = Math.max(0, Math.floor((now - lastInteractionRef.current) / 1000));
+
+      const idleSeconds = await getSystemIdleSeconds();
+
+      if (idleSeconds < INACTIVITY_THRESHOLD_SECONDS) {
+        lastInteractionRef.current = Date.now() - idleSeconds * 1000;
+
+        if (typeof scheduleInactivityCheckRef.current === 'function') {
+          scheduleInactivityCheckRef.current();
+        }
+
+        return;
+      }
+
       const idleToConsider = Math.max(0, Math.min(idleSeconds, sessionDuration));
 
       console.log(
@@ -578,7 +612,8 @@ const TimerComponent = forwardRef((
     showInactivityModal,
     currentSessionStart,
     handlePause,
-    clearInactivityTimeout
+    clearInactivityTimeout,
+    getSystemIdleSeconds
   ]);
 
   const handleInactivityTimeoutRef = useRef(handleInactivityTimeout);
@@ -586,6 +621,17 @@ const TimerComponent = forwardRef((
   useEffect(() => {
     handleInactivityTimeoutRef.current = handleInactivityTimeout;
   }, [handleInactivityTimeout]);
+
+  const scheduleInactivityCheck = useCallback(() => {
+    clearInactivityTimeout();
+    inactivityTimeoutRef.current = setTimeout(() => {
+      handleInactivityTimeoutRef.current();
+    }, INACTIVITY_THRESHOLD_MS);
+  }, [clearInactivityTimeout]);
+
+  useEffect(() => {
+    scheduleInactivityCheckRef.current = scheduleInactivityCheck;
+  }, [scheduleInactivityCheck]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -596,13 +642,6 @@ const TimerComponent = forwardRef((
       clearInactivityTimeout();
       return undefined;
     }
-
-    const scheduleInactivityCheck = () => {
-      clearInactivityTimeout();
-      inactivityTimeoutRef.current = setTimeout(() => {
-        handleInactivityTimeoutRef.current();
-      }, INACTIVITY_THRESHOLD_MS);
-    };
 
     const activityEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'];
     const activityHandler = () => {
@@ -623,7 +662,7 @@ const TimerComponent = forwardRef((
       });
       clearInactivityTimeout();
     };
-  }, [isRunning, showInactivityModal, clearInactivityTimeout]);
+  }, [isRunning, showInactivityModal, clearInactivityTimeout, scheduleInactivityCheck]);
 
   const handleStop = async () => {
     if (!selectedProject || !hasPendingSession) {
