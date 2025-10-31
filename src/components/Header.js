@@ -10,7 +10,7 @@ import {
   Download,
   MessageCircle
 } from 'lucide-react';
-import logo from '../assets/trustytimer-logo.png';
+import { TRUSTY_TIMER_LOGO_DATA_URL } from '../assets/trustytimerLogoData';
 
 const Header = ({ 
   currentView, 
@@ -50,7 +50,7 @@ const Header = ({
         <div className="flex items-center space-x-3">
           <div className="flex items-center justify-center w-12 h-12 bg-white rounded-lg shadow-sm border border-gray-100">
             <img
-              src={logo}
+              src={TRUSTY_TIMER_LOGO_DATA_URL}
               alt="Logo TrustyTimer"
               className="w-10 h-10 object-contain"
             />
