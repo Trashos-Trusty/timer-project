@@ -43,6 +43,7 @@ function createMiniWindow() {
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.js'),
       sandbox: false,
+      backgroundThrottling: false,
     },
   });
 
@@ -89,7 +90,8 @@ function createWindow() {
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false,
       safeDialogs: true,
-      safeDialogsMessage: 'Cette application a tenté d\'ouvrir plusieurs boîtes de dialogue'
+      safeDialogsMessage: 'Cette application a tenté d\'ouvrir plusieurs boîtes de dialogue',
+      backgroundThrottling: false,
     },
     titleBarStyle: 'default',
     icon: path.join(__dirname, 'icon.png'),
