@@ -92,14 +92,28 @@ const TimerComponent = forwardRef((
   }, []);
 
   const persistProject = useCallback(async (projectData) => {
-    try {
-      if (window.electronAPI) {
-        await window.electronAPI.saveProject(projectData);
-      }
-    } finally {
+    if (!window?.electronAPI?.saveProject) {
       if (onProjectUpdate) {
         onProjectUpdate(projectData);
       }
+      return projectData;
+    }
+
+    try {
+      const result = await window.electronAPI.saveProject(projectData);
+      const mergedProject =
+        result && typeof result === 'object'
+          ? { ...projectData, ...result }
+          : projectData;
+
+      if (onProjectUpdate) {
+        onProjectUpdate(mergedProject);
+      }
+
+      return mergedProject;
+    } catch (error) {
+      console.error('❌ Échec de la persistance du projet:', error);
+      throw error;
     }
   }, [onProjectUpdate]);
 
@@ -1079,7 +1093,7 @@ const TimerComponent = forwardRef((
 
       console.log('✅ Tâche validée, temps conservé:', currentTime);
 
-      lastManualStopRef.current = null;
+      const lastStopSnapshot = lastManualStopRef.current;
 
       const pendingStop = pendingManualStopRef.current;
 
@@ -1116,8 +1130,49 @@ const TimerComponent = forwardRef((
 
             setWorkSessions(finalWorkSessions);
           }
+
+          lastManualStopRef.current = null;
         } catch (error) {
           console.error('❌ Erreur lors de la sauvegarde:', error);
+
+          if (window?.electronAPI?.showMessageBox) {
+            window.electronAPI.showMessageBox({
+              type: 'error',
+              title: 'Erreur de sauvegarde',
+              message: "La session n'a pas pu être enregistrée. Veuillez vérifier votre connexion puis réessayer.",
+              buttons: ['OK']
+            });
+          } else {
+            window.alert("La session n'a pas pu être enregistrée. Veuillez vérifier votre connexion puis réessayer.");
+          }
+
+          if (lastStopSnapshot) {
+            if (Array.isArray(lastStopSnapshot.previousWorkSessions)) {
+              setWorkSessions(lastStopSnapshot.previousWorkSessions);
+            }
+
+            const restoredBaseTime = lastStopSnapshot.previousBaseProjectTime || 0;
+            const restoredAccumulated = lastStopSnapshot.previousAccumulatedSessionTime || 0;
+            const restoredTotalTime =
+              typeof lastStopSnapshot.previousCurrentTime === 'number'
+                ? lastStopSnapshot.previousCurrentTime
+                : restoredBaseTime + restoredAccumulated;
+
+            setBaseProjectTime(restoredBaseTime);
+            setCurrentTime(restoredTotalTime);
+            setAccumulatedSessionTime(restoredAccumulated);
+            accumulatedSessionTimeRef.current = restoredAccumulated;
+            setSessionStartTime(lastStopSnapshot.previousSessionStartTime || null);
+            setLastSessionEndTime(lastStopSnapshot.previousLastSessionEndTime || null);
+
+            const previousSubject = typeof lastStopSnapshot.previousSubject === 'string'
+              ? lastStopSnapshot.previousSubject
+              : '';
+            setCurrentSubject(previousSubject);
+            activeSessionSubjectRef.current = previousSubject;
+          }
+
+          return;
         }
       }
 
