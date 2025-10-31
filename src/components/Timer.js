@@ -226,8 +226,10 @@ const TimerComponent = forwardRef((
       const previousAccumulatedTime = accumulatedSessionTimeRef.current ?? 0;
       const previousBaseTime = baseProjectTimeRef.current ?? 0;
       const wasRunning = isRunningRef.current;
+      const shouldPreventRollback =
+        isSameProject && (wasRunning || selectedProject.status === 'running');
 
-      if (isSameProject && wasRunning) {
+      if (shouldPreventRollback) {
         if (projectCurrentTime < previousCurrentTime) {
           console.warn('⚠️ Mise à jour reçue avec un temps inférieur au temps local, rollback ignoré', {
             received: projectCurrentTime,
@@ -245,7 +247,7 @@ const TimerComponent = forwardRef((
 
       let baseTime = Math.max(0, projectCurrentTime - projectAccumulatedTime);
 
-      if (isSameProject && wasRunning && baseTime < previousBaseTime) {
+      if (shouldPreventRollback && baseTime < previousBaseTime) {
         baseTime = previousBaseTime;
       }
 
