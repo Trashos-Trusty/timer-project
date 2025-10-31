@@ -234,6 +234,9 @@ if ($action === 'projects' && $method === 'GET') {
                 ];
             }
             
+            $currentTime = isset($project['current_time']) ? intval($project['current_time']) : $usedTime;
+            $status = isset($project['status']) ? $project['status'] : 'active';
+
             $formattedProjects[] = [
                 'id' => $project['project_uuid'] ?? $project['id'],
                 'name' => $project['name'],
@@ -242,8 +245,8 @@ if ($action === 'projects' && $method === 'GET') {
                 'company' => $clientCompany,
                 'totalTime' => intval($project['total_time_allocated'] ?? 0),
                 'usedTime' => $usedTime,
-                'currentTime' => $usedTime,
-                'status' => $project['status'] ?? 'active',
+                'currentTime' => $currentTime,
+                'status' => $status,
                 'lastSaved' => $project['last_activity'] ?? $project['created_at'],
                 'workSessions' => $workSessions,
                 'subjectHistory' => [],
@@ -279,7 +282,28 @@ if ($action === 'projects' && $method === 'POST') {
     
     try {
         $pdo = getConnection();
-        
+
+        // S'assurer que les colonnes nécessaires existent pour la persistance du timer
+        $requiredColumns = [
+            'current_time' => "ALTER TABLE projects ADD COLUMN current_time INT DEFAULT 0 AFTER total_time_allocated",
+            'status' => "ALTER TABLE projects ADD COLUMN status VARCHAR(50) DEFAULT 'active' AFTER hourly_rate"
+        ];
+
+        $columnsStmt = $pdo->query("SHOW COLUMNS FROM projects");
+        $existingColumns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+        foreach ($requiredColumns as $column => $alterSql) {
+            if (!in_array($column, $existingColumns)) {
+                try {
+                    $pdo->exec($alterSql);
+                } catch (Exception $e) {
+                    if (strpos($e->getMessage(), 'Duplicate column') === false) {
+                        throw $e;
+                    }
+                }
+            }
+        }
+
         // ÉTAPE 1: Créer ou récupérer un client avec DEBUG
         $clientName = $projectData['clientName'] ?? $projectData['client'] ?? 'Client par défaut';
         
@@ -323,24 +347,31 @@ if ($action === 'projects' && $method === 'POST') {
         $stmt->execute([$projectData['id'], $freelanceId]);
         $existingProject = $stmt->fetch();
         
+        $currentTime = isset($projectData['currentTime']) ? intval($projectData['currentTime']) : 0;
+        $status = $projectData['status'] ?? 'active';
+
         if ($existingProject) {
             // UPDATE du projet existant
-            $stmt = $pdo->prepare('UPDATE projects SET 
-                client_id = ?, 
-                name = ?, 
-                description = ?, 
-                total_time_allocated = ?, 
-                hourly_rate = ?, 
-                last_activity = NOW(), 
+            $stmt = $pdo->prepare('UPDATE projects SET
+                client_id = ?,
+                name = ?,
+                description = ?,
+                total_time_allocated = ?,
+                hourly_rate = ?,
+                current_time = ?,
+                status = ?,
+                last_activity = NOW(),
                 updated_at = NOW()
                 WHERE id = ? AND freelance_id = ?');
-            
+
             $stmt->execute([
                 $clientId,
                 $projectData['name'],
                 $projectData['description'] ?? '',
                 $projectData['totalTime'] ?? 0,
                 $projectData['hourlyRate'] ?? 0,
+                $currentTime,
+                $status,
                 $existingProject['id'],
                 $freelanceId
             ]);
@@ -348,22 +379,23 @@ if ($action === 'projects' && $method === 'POST') {
         } else {
             // INSERT nouveau projet
             $stmt = $pdo->prepare('INSERT INTO projects (
-                freelance_id, 
-                client_id, 
-                project_uuid, 
-                name, 
-                description, 
-                project_type, 
-                total_time_allocated, 
-                hourly_rate, 
-                status, 
-                start_date, 
-                end_date, 
-                last_activity, 
-                created_at, 
+                freelance_id,
+                client_id,
+                project_uuid,
+                name,
+                description,
+                project_type,
+                total_time_allocated,
+                hourly_rate,
+                current_time,
+                status,
+                start_date,
+                end_date,
+                last_activity,
+                created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())');
-            
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+
             $stmt->execute([
                 $freelanceId,
                 $clientId,
@@ -373,9 +405,11 @@ if ($action === 'projects' && $method === 'POST') {
                 'timer',
                 $projectData['totalTime'] ?? 0,
                 $projectData['hourlyRate'] ?? 0,
-                'active',
+                $currentTime,
+                $status,
                 null,
-                null
+                null,
+                $currentTime > 0 ? date('Y-m-d H:i:s') : null
             ]);
             $projectId = $pdo->lastInsertId();
         }
@@ -508,7 +542,9 @@ if ($action === 'projects' && $method === 'POST') {
         echo json_encode([
             'success' => true,
             'message' => 'Projet sauvegardé avec succès',
-            'project_id' => $projectId
+            'project_id' => $projectId,
+            'currentTime' => $currentTime,
+            'status' => $status
         ]);
         
     } catch (Exception $e) {
