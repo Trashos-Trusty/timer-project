@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow, AlertTriangle } from 'lucide-react';
 import connectionManager from '../connectionManager';
+import { isSessionExpiredError, markSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../utils/authErrors';
 
 const LARGE_SCREEN_BREAKPOINT = 768;
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000;
@@ -15,7 +16,8 @@ const TimerComponent = forwardRef((
     onTimerSnapshot,
     onToggleMiniTimer = () => {},
     isMiniTimerVisible = false,
-    canShowMiniTimer = false
+    canShowMiniTimer = false,
+    onSessionExpired = () => {}
   },
   ref
 ) => {
@@ -113,9 +115,20 @@ const TimerComponent = forwardRef((
       return mergedProject;
     } catch (error) {
       console.error('❌ Échec de la persistance du projet:', error);
-      throw error;
+      if (isSessionExpiredError(error)) {
+        if (!error?.isAuthError) {
+          try {
+            onSessionExpired();
+          } catch (callbackError) {
+            console.error('Erreur lors de la gestion de la session expirée:', callbackError);
+          }
+        }
+        throw markSessionExpiredError(error);
+      }
+
+      throw error instanceof Error ? error : new Error(String(error || 'Erreur inconnue lors de la sauvegarde du projet.'));
     }
-  }, [onProjectUpdate]);
+  }, [onProjectUpdate, onSessionExpired]);
 
   const clearInactivityTimeout = useCallback(() => {
     if (inactivityTimeoutRef.current) {
@@ -1135,15 +1148,20 @@ const TimerComponent = forwardRef((
         } catch (error) {
           console.error('❌ Erreur lors de la sauvegarde:', error);
 
+          const isAuthError = isSessionExpiredError(error);
+          const alertMessage = isAuthError
+            ? `${SESSION_EXPIRED_MESSAGE}, veuillez vous reconnecter.`
+            : "La session n'a pas pu être enregistrée. Veuillez vérifier votre connexion puis réessayer.";
+
           if (window?.electronAPI?.showMessageBox) {
             window.electronAPI.showMessageBox({
               type: 'error',
               title: 'Erreur de sauvegarde',
-              message: "La session n'a pas pu être enregistrée. Veuillez vérifier votre connexion puis réessayer.",
+              message: alertMessage,
               buttons: ['OK']
             });
           } else {
-            window.alert("La session n'a pas pu être enregistrée. Veuillez vérifier votre connexion puis réessayer.");
+            window.alert(alertMessage);
           }
 
           if (lastStopSnapshot) {

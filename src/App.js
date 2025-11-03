@@ -14,6 +14,7 @@ import FeedbackModal from './components/FeedbackModal';
 import MiniTimerOverlay from './components/MiniTimerOverlay';
 import MiniTimerWindow from './components/MiniTimerWindow';
 import connectionManager from './connectionManager';
+import { isSessionExpiredError, markSessionExpiredError } from './utils/authErrors';
 import './index.css';
 
 const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
@@ -79,6 +80,22 @@ function App() {
   );
 
   const miniTimerWasVisibleRef = useRef(false);
+
+  const handleSessionExpired = useCallback(() => {
+    console.warn('🔒 Session expirée détectée, retour à l\'écran de connexion.');
+    setIsAuthenticated(false);
+    setFreelanceInfo(null);
+    setSelectedProject(null);
+    setMiniTimerSnapshot(null);
+
+    if (typeof window !== 'undefined' && window.electronAPI?.clearToken) {
+      try {
+        window.electronAPI.clearToken();
+      } catch (error) {
+        console.error('Erreur lors de la suppression du token après expiration de session:', error);
+      }
+    }
+  }, []);
 
   const clampMiniTimerPosition = useCallback(
     (position) => {
@@ -693,6 +710,13 @@ function App() {
           }
         } catch (error) {
           console.error('Erreur lors de l\'arrêt du projet:', error);
+          if (isSessionExpiredError(error)) {
+            if (!error?.isAuthError) {
+              handleSessionExpired();
+            }
+            markSessionExpiredError(error);
+            return;
+          }
         }
       }
       // Désélectionner le projet
@@ -809,7 +833,14 @@ function App() {
       
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde du projet:', error);
-      throw error;
+      if (isSessionExpiredError(error)) {
+        if (!error?.isAuthError) {
+          handleSessionExpired();
+        }
+        throw markSessionExpiredError(error);
+      }
+
+      throw error instanceof Error ? error : new Error(String(error || 'Erreur inconnue lors de la sauvegarde du projet.'));
     } finally {
       // S'assurer que isSaving est remis à false dans tous les cas
       setIsSaving(false);
@@ -1014,6 +1045,7 @@ function App() {
               onToggleMiniTimer={handleToggleMiniTimer}
               isMiniTimerVisible={isMiniTimerVisible}
               canShowMiniTimer={canShowMiniTimer}
+              onSessionExpired={handleSessionExpired}
             />
           ) : (
             <Stopwatch />
