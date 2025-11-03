@@ -266,17 +266,27 @@ class ApiManager {
         resolve(result);
       } catch (error) {
         console.error(`❌ Erreur opération API ${operationName}:`, error);
-        
+
+        const statusCode = error && typeof error === 'object' ? error.status : undefined;
+        const message = typeof error?.message === 'string' ? error.message : '';
+        const isAuthError = statusCode === 401 || statusCode === 403 ||
+          message.includes('401') || message.includes('403') || message.toLowerCase().includes('token expiré');
+
         // Si erreur d'authentification, essayer de renouveler le token
-        if (error.message.includes('401') || error.message.includes('403')) {
+        if (isAuthError) {
           const refreshed = await this.refreshToken();
           if (refreshed) {
             // Remettre l'opération en queue
             this.operationQueue.unshift({ operation, operationName, resolve, reject });
             continue;
           }
+
+          const sessionError = new Error('Votre session a expiré. Veuillez vous reconnecter.');
+          sessionError.status = statusCode || 401;
+          reject(sessionError);
+          continue;
         }
-        
+
         reject(error);
       }
     }
@@ -313,10 +323,27 @@ class ApiManager {
     }
 
     if (!response.ok) {
-      if (response.status === 401) {
-        throw new Error('Token expiré ou invalide');
+      let errorMessage = `Erreur API: ${response.status} - ${response.statusText}`;
+      let errorBody = null;
+
+      try {
+        errorBody = await response.json();
+        if (errorBody && typeof errorBody === 'object' && errorBody.message) {
+          errorMessage = `${errorBody.message} (${response.status})`;
+        }
+      } catch (parseError) {
+        // Ignorer les erreurs de parsing JSON et conserver le message par défaut
       }
-      throw new Error(`Erreur API: ${response.status} - ${response.statusText}`);
+
+      if (response.status === 401 && !errorMessage.includes('401')) {
+        errorMessage = `${errorMessage} (401)`;
+      }
+
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      error.statusText = response.statusText;
+      error.responseBody = errorBody;
+      throw error;
     }
 
     return await response.json();
