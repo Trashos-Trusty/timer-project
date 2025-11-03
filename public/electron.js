@@ -1,8 +1,52 @@
 const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor } = require('electron');
 const path = require('path');
+const log = require('electron-log/main');
 
 // Remplacer electron-is-dev par une vérification simple
 const isDev = process.env.NODE_ENV === 'development' || process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath);
+
+const originalConsole = {
+  log: console.log.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+  info: console.info.bind(console),
+  debug: console.debug ? console.debug.bind(console) : console.log.bind(console),
+};
+
+function setupProductionLogging() {
+  try {
+    log.transports.file.level = 'debug';
+    log.transports.file.maxSize = 10 * 1024 * 1024; // 10 Mo pour éviter un fichier trop volumineux
+    log.transports.console.level = 'debug';
+
+    const logFile = log.transports.file.getFile();
+
+    Object.assign(console, log.functions);
+
+    log.info('📝 Journalisation production activée (niveau debug)');
+    if (logFile?.path) {
+      log.info(`📄 Fichier de logs: ${logFile.path}`);
+    }
+
+    app.on('browser-window-created', (_event, window) => {
+      window.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+        const levelMap = {
+          0: 'info',
+          1: 'warn',
+          2: 'error',
+          3: 'info',
+          4: 'debug',
+        };
+
+        const logger = log[levelMap[level]] || log.info;
+        const source = sourceId ? sourceId.replace(appStartUrl, '').trim() : 'renderer';
+        logger(`[renderer:${source}:${line}] ${message}`);
+      });
+    });
+  } catch (error) {
+    originalConsole.error('❌ Impossible d\'initialiser la journalisation production:', error);
+  }
+}
 
 // Imports directs depuis public/utils (toujours disponible)
 const ConfigManager = require('./utils/configManager');
@@ -20,6 +64,10 @@ let lastMiniTimerSnapshot = null;
 const appStartUrl = isDev
   ? 'http://localhost:3000'
   : `file://${path.join(__dirname, '../build/index.html')}`;
+
+if (!isDev) {
+  setupProductionLogging();
+}
 
 function createMiniWindow() {
   if (miniWindow && !miniWindow.isDestroyed()) {
