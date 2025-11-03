@@ -207,9 +207,7 @@ function createMenu() {
     { role: 'forcereload', label: 'Actualiser (force)' }
   ];
 
-  if (isDev) {
-    viewSubmenu.push({ role: 'toggledevtools', label: 'Outils de développement' });
-  }
+  viewSubmenu.push({ role: 'toggledevtools', label: 'Outils de développement' });
 
   viewSubmenu.push({ type: 'separator' });
 
