@@ -284,9 +284,9 @@ if ($action === 'projects' && $method === 'POST') {
         $pdo = getConnection();
 
         // S'assurer que les colonnes nécessaires existent pour la persistance du timer
-        $requiredColumns = [
-            'current_time' => "ALTER TABLE projects ADD COLUMN current_time INT DEFAULT 0 AFTER total_time_allocated",
-            'status' => "ALTER TABLE projects ADD COLUMN status VARCHAR(50) DEFAULT 'active' AFTER hourly_rate"
+ $requiredColumns = [
+           'current_time' => "ALTER TABLE `projects` ADD COLUMN `current_time` INT DEFAULT 0 AFTER `total_time_allocated`",
+            'status' => "ALTER TABLE `projects` ADD COLUMN `status` VARCHAR(50) DEFAULT 'active' AFTER `hourly_rate`"
         ];
 
         $columnsStmt = $pdo->query("SHOW COLUMNS FROM projects");
