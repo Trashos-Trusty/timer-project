@@ -17,6 +17,24 @@ import connectionManager from './connectionManager';
 import { isSessionExpiredError, markSessionExpiredError } from './utils/authErrors';
 import './index.css';
 
+const normalizeProject = (project) => {
+  if (!project) {
+    return project;
+  }
+
+  const client =
+    project.client !== undefined && project.client !== null
+      ? project.client
+      : project.clientName !== undefined && project.clientName !== null
+        ? project.clientName
+        : '';
+
+  return {
+    ...project,
+    client
+  };
+};
+
 const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
 const FEEDBACK_FALLBACK_EMAIL = 'enguerran@trustystudio.fr';
 const MINI_TIMER_MAX_WAIT_ATTEMPTS = 20;
@@ -462,7 +480,6 @@ function App() {
         }
 
         // Filtrer les doublons par ID - garder le plus récent
-        const uniqueProjects = [];
         const projectMap = new Map();
 
         loadedProjects.forEach(project => {
@@ -477,18 +494,21 @@ function App() {
           }
         });
 
-        // Convertir la Map en tableau
-        projectMap.forEach(project => uniqueProjects.push(project));
+        // Convertir la Map en tableau et normaliser les données
+        const normalizedProjects = [];
+        projectMap.forEach(project => {
+          normalizedProjects.push(normalizeProject(project));
+        });
 
         // Trier par nom
-        uniqueProjects.sort((a, b) => {
+        normalizedProjects.sort((a, b) => {
           const nameA = (a?.name || '').toString().toLowerCase();
           const nameB = (b?.name || '').toString().toLowerCase();
           return nameA.localeCompare(nameB);
         });
 
-        console.log(`📋 Projets chargés: ${loadedProjects.length} total, ${uniqueProjects.length} uniques`);
-        setProjects(uniqueProjects);
+        console.log(`📋 Projets chargés: ${loadedProjects.length} total, ${normalizedProjects.length} uniques`);
+        setProjects(normalizedProjects);
       }
     } catch (error) {
       console.error('❌ Erreur lors du chargement des projets:', error);
@@ -745,26 +765,28 @@ function App() {
       return;
     }
 
+    const normalizedProject = normalizeProject(updatedProject);
+
     setProjects((prevProjects) => {
       let found = false;
       const updatedProjects = prevProjects.map((project) => {
-        if (project.id === updatedProject.id) {
+        if (project.id === normalizedProject.id) {
           found = true;
-          return { ...project, ...updatedProject };
+          return { ...project, ...normalizedProject };
         }
         return project;
       });
 
       if (!found) {
-        return [...prevProjects, updatedProject];
+        return [...prevProjects, normalizedProject];
       }
 
       return updatedProjects;
     });
 
     setSelectedProject((prevSelected) => {
-      if (prevSelected?.id === updatedProject.id) {
-        return { ...prevSelected, ...updatedProject };
+      if (prevSelected?.id === normalizedProject.id) {
+        return { ...prevSelected, ...normalizedProject };
       }
       return prevSelected;
     });
