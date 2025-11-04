@@ -54,6 +54,9 @@ const TimerComponent = forwardRef((
   const [lastAutoSave, setLastAutoSave] = useState(null);
   const [showInactivityModal, setShowInactivityModal] = useState(false);
   const [inactivityContext, setInactivityContext] = useState(null);
+  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
+  const [hasAcknowledgedOvertime, setHasAcknowledgedOvertime] = useState(false);
+  const [autoPausedForOvertime, setAutoPausedForOvertime] = useState(false);
 
   const currentSessionElapsed = Math.max(0, currentTime - baseProjectTime);
   const hasPendingSession = Boolean(
@@ -200,8 +203,74 @@ const TimerComponent = forwardRef((
   }, [currentTime]);
 
   useEffect(() => {
+    if (!selectedProject?.totalTime) {
+      setShowOvertimeModal(false);
+      setAutoPausedForOvertime(false);
+      setHasAcknowledgedOvertime(false);
+      return;
+    }
+
+    if (currentTime < selectedProject.totalTime) {
+      setShowOvertimeModal(false);
+      setAutoPausedForOvertime(false);
+      setHasAcknowledgedOvertime(false);
+    }
+  }, [selectedProject?.totalTime, currentTime]);
+
+  useEffect(() => {
     isRunningRef.current = isRunning;
   }, [isRunning]);
+
+  useEffect(() => {
+    if (
+      !selectedProject?.totalTime ||
+      hasAcknowledgedOvertime ||
+      showOvertimeModal ||
+      !isRunning ||
+      currentTime < selectedProject.totalTime
+    ) {
+      return;
+    }
+
+    setShowOvertimeModal(true);
+    setAutoPausedForOvertime(true);
+
+    (async () => {
+      try {
+        await handlePause();
+      } catch (error) {
+        console.error('Erreur lors de la mise en pause pour dépassement de temps :', error);
+      }
+    })();
+  }, [
+    currentTime,
+    selectedProject?.totalTime,
+    hasAcknowledgedOvertime,
+    showOvertimeModal,
+    isRunning,
+    handlePause
+  ]);
+
+  useEffect(() => {
+    if (!selectedProject?.totalTime) {
+      return;
+    }
+
+    if (
+      !isRunning &&
+      !autoPausedForOvertime &&
+      hasAcknowledgedOvertime &&
+      currentTime >= selectedProject.totalTime
+    ) {
+      setHasAcknowledgedOvertime(false);
+    }
+  }, [
+    isRunning,
+    autoPausedForOvertime,
+    hasAcknowledgedOvertime,
+    currentTime,
+    selectedProject?.totalTime
+  ]);
 
   const loadProject = useCallback(async () => {
     if (!selectedProject) {
@@ -220,6 +289,9 @@ const TimerComponent = forwardRef((
       setBaseProjectTime(0);
       lastProjectUpdateRef.current = { projectId: null, lastSaved: null };
       carriedSessionDurationRef.current = 0;
+      setShowOvertimeModal(false);
+      setHasAcknowledgedOvertime(false);
+      setAutoPausedForOvertime(false);
       return;
     }
 
@@ -310,6 +382,9 @@ const TimerComponent = forwardRef((
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
       accumulatedSessionTimeRef.current = projectAccumulatedTime;
+      setShowOvertimeModal(false);
+      setHasAcknowledgedOvertime(false);
+      setAutoPausedForOvertime(false);
 
       // S'assurer que toutes les sessions ont une propriété date correcte
       const sessionsWithDate = (selectedProject.workSessions || []).map(session => {
@@ -1060,7 +1135,14 @@ const TimerComponent = forwardRef((
     return Math.max(selectedProject.totalTime - currentTime, 0);
   };
 
+  const getOvertimeSeconds = () => {
+    if (!selectedProject || !selectedProject.totalTime) return 0;
+    return Math.max(currentTime - selectedProject.totalTime, 0);
+  };
+
   const confirmationSubject = (subjectInput && subjectInput.trim()) || pendingConfirmationSubject || currentSubject || activeSessionSubjectRef.current || 'Travail général';
+  const overtimeSeconds = getOvertimeSeconds();
+  const hasOvertime = overtimeSeconds > 0;
 
   const handleSubjectSubmit = async () => {
     const newSubject = subjectInput.trim();
@@ -1311,6 +1393,33 @@ const TimerComponent = forwardRef((
       setSubjectModalType('start');
     }
   };
+
+  const handleOvertimeContinue = useCallback(async () => {
+    setShowOvertimeModal(false);
+    setHasAcknowledgedOvertime(true);
+
+    if (autoPausedForOvertime) {
+      try {
+        await handleStart();
+      } catch (error) {
+        console.error('Erreur lors de la reprise après dépassement :', error);
+      }
+    }
+
+    setAutoPausedForOvertime(false);
+  }, [autoPausedForOvertime, handleStart]);
+
+  const handleOvertimeStop = useCallback(async () => {
+    setShowOvertimeModal(false);
+    setAutoPausedForOvertime(false);
+    setHasAcknowledgedOvertime(false);
+
+    try {
+      await handleStop();
+    } catch (error) {
+      console.error("Erreur lors de l'arrêt après dépassement :", error);
+    }
+  }, [handleStop]);
 
   // Fonction supprimée car non utilisée
   // const handleChangeSubject = () => {
@@ -1761,6 +1870,11 @@ const TimerComponent = forwardRef((
                       <div className={`${getTimerSize().fontSize} font-mono font-bold transition-all duration-200 ${isRunning ? 'text-warning-600 timer-active' : 'text-gray-900'}`}>
                         {formatTime(getRemainingTime())}
                       </div>
+                      {hasOvertime && (
+                        <div className="mt-1 text-xs font-semibold text-danger-600">
+                          Temps dépassé de {formatDuration(overtimeSeconds)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1830,6 +1944,11 @@ const TimerComponent = forwardRef((
                       <div className={`${getTimerSize().fontSize} font-mono font-bold transition-all duration-200 ${isRunning ? 'text-warning-600 timer-active' : 'text-gray-900'}`}>
                         {formatTime(getRemainingTime())}
                       </div>
+                      {hasOvertime && (
+                        <div className="mt-1 text-xs font-semibold text-danger-600">
+                          Temps dépassé de {formatDuration(overtimeSeconds)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1840,7 +1959,15 @@ const TimerComponent = forwardRef((
                     Travaillé: <span className="font-medium">{formatTime(currentTime)}</span>
                   </div>
                   <div className="text-xs text-gray-500 mb-1">
-                    Restant: <span className="font-medium text-warning-600">{formatTime(getRemainingTime())}</span>
+                    {hasOvertime ? (
+                      <>
+                        Temps dépassé: <span className="font-medium text-danger-600">{formatDuration(overtimeSeconds)}</span>
+                      </>
+                    ) : (
+                      <>
+                        Restant: <span className="font-medium text-warning-600">{formatTime(getRemainingTime())}</span>
+                      </>
+                    )}
                   </div>
                   {isRunning && lastAutoSave && (
                     <div className="text-xs text-green-600 flex items-center gap-1">
@@ -1883,9 +2010,11 @@ const TimerComponent = forwardRef((
                     <div className="font-bold text-gray-900">{formatTime(selectedProject.totalTime || 0)}</div>
                     <div className="text-gray-500">Total</div>
                   </div>
-                  <div className="text-center bg-warning-50 rounded p-2">
-                    <div className="font-bold text-warning-600">{formatTime(getRemainingTime())}</div>
-                    <div className="text-gray-500">Restant</div>
+                  <div className={`text-center rounded p-2 ${hasOvertime ? 'bg-danger-50' : 'bg-warning-50'}`}>
+                    <div className={`font-bold ${hasOvertime ? 'text-danger-600' : 'text-warning-600'}`}>
+                      {hasOvertime ? formatDuration(overtimeSeconds) : formatTime(getRemainingTime())}
+                    </div>
+                    <div className="text-gray-500">{hasOvertime ? 'Dépassement' : 'Restant'}</div>
                   </div>
                 </div>
               </>
@@ -2395,6 +2524,43 @@ const TimerComponent = forwardRef((
                 className="btn-primary"
               >
                 Sauvegarder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de dépassement du temps alloué */}
+      {showOvertimeModal && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center mb-3">
+              <AlertTriangle className="w-5 h-5 text-danger-500 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900">Temps alloué atteint</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              Vous avez atteint le temps prévu pour ce projet.
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              Souhaitez-vous continuer pour facturer du temps supplémentaire ou arrêter maintenant ?
+            </p>
+            {hasOvertime && (
+              <div className="mb-4 rounded-lg bg-danger-50 border border-danger-100 px-3 py-2 text-danger-700 text-sm">
+                Temps dépassé actuel&nbsp;: <span className="font-semibold">{formatDuration(overtimeSeconds)}</span>
+              </div>
+            )}
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={handleOvertimeStop}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Arrêter
+              </button>
+              <button
+                onClick={handleOvertimeContinue}
+                className="btn-primary"
+              >
+                Continuer
               </button>
             </div>
           </div>
