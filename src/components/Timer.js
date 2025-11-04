@@ -222,36 +222,6 @@ const TimerComponent = forwardRef((
   }, [isRunning]);
 
   useEffect(() => {
-    if (
-      !selectedProject?.totalTime ||
-      hasAcknowledgedOvertime ||
-      showOvertimeModal ||
-      !isRunning ||
-      currentTime < selectedProject.totalTime
-    ) {
-      return;
-    }
-
-    setShowOvertimeModal(true);
-    setAutoPausedForOvertime(true);
-
-    (async () => {
-      try {
-        await handlePause();
-      } catch (error) {
-        console.error('Erreur lors de la mise en pause pour dépassement de temps :', error);
-      }
-    })();
-  }, [
-    currentTime,
-    selectedProject?.totalTime,
-    hasAcknowledgedOvertime,
-    showOvertimeModal,
-    isRunning,
-    handlePause
-  ]);
-
-  useEffect(() => {
     if (!selectedProject?.totalTime) {
       return;
     }
@@ -653,20 +623,50 @@ const TimerComponent = forwardRef((
       await persistProject(updatedProject);
 
     } catch (error) {
-      console.error('Erreur lors de la pause:', error);
+    console.error('Erreur lors de la pause:', error);
+  }
+}, [
+  selectedProject,
+  isRunning,
+  clearInactivityTimeout,
+  accumulatedSessionTime,
+  currentSessionStart,
+  baseProjectTime,
+  currentSubject,
+  subjectHistory,
+  sessionStartTime,
+  workSessions,
+  persistProject
+]);
+
+  useEffect(() => {
+    if (
+      !selectedProject?.totalTime ||
+      hasAcknowledgedOvertime ||
+      showOvertimeModal ||
+      !isRunning ||
+      currentTime < selectedProject.totalTime
+    ) {
+      return;
     }
+
+    setShowOvertimeModal(true);
+    setAutoPausedForOvertime(true);
+
+    (async () => {
+      try {
+        await handlePause();
+      } catch (error) {
+        console.error('Erreur lors de la mise en pause pour dépassement de temps :', error);
+      }
+    })();
   }, [
-    selectedProject,
+    currentTime,
+    selectedProject?.totalTime,
+    hasAcknowledgedOvertime,
+    showOvertimeModal,
     isRunning,
-    clearInactivityTimeout,
-    accumulatedSessionTime,
-    currentSessionStart,
-    baseProjectTime,
-    currentSubject,
-    subjectHistory,
-    sessionStartTime,
-    workSessions,
-    persistProject
+    handlePause
   ]);
 
   const handleInactivityTimeout = useCallback(() => {
