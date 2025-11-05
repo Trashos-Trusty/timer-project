@@ -43,6 +43,7 @@ const TimerComponent = forwardRef((
   const [showTodaySummary, setShowTodaySummary] = useState(true);
   const [showAllTodaySessions, setShowAllTodaySessions] = useState(false);
   const [lastSessionEndTime, setLastSessionEndTime] = useState(null);
+  const [hasPendingStopModal, setHasPendingStopModal] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(25); // Pourcentage de largeur pour le panneau de gauche
   const [isDragging, setIsDragging] = useState(false);
   const [isLargeScreen, setIsLargeScreen] = useState(() => {
@@ -1046,6 +1047,7 @@ const TimerComponent = forwardRef((
           setSubjectModalType('stop');
           setPendingConfirmationSubject(sessionSubjectForModal);
           setSubjectInput(sessionSubjectForModal);
+          setHasPendingStopModal(true);
           setShowSubjectModal(true);
         }
       }
@@ -1178,6 +1180,36 @@ const TimerComponent = forwardRef((
   const overtimeSeconds = getOvertimeSeconds();
   const hasOvertime = overtimeSeconds > 0;
 
+  useEffect(() => {
+    if (!hasPendingStopModal || subjectModalType !== 'stop') {
+      return;
+    }
+
+    if (!showSubjectModal) {
+      setShowSubjectModal(true);
+    }
+
+    if (!subjectInput && pendingConfirmationSubject) {
+      setSubjectInput(pendingConfirmationSubject);
+    }
+  }, [hasPendingStopModal, subjectModalType, showSubjectModal, pendingConfirmationSubject, subjectInput]);
+
+  useEffect(() => {
+    if (!showSubjectModal || subjectModalType !== 'stop') {
+      return;
+    }
+
+    if (typeof window === 'undefined' || !window.electronAPI?.showMainWindow) {
+      return;
+    }
+
+    try {
+      window.electronAPI.showMainWindow();
+    } catch (error) {
+      console.error("Erreur lors de l'affichage de la fenêtre principale pour la confirmation de session:", error);
+    }
+  }, [showSubjectModal, subjectModalType]);
+
   const handleSubjectSubmit = async () => {
     const newSubject = subjectInput.trim();
     if (!newSubject) return;
@@ -1261,6 +1293,7 @@ const TimerComponent = forwardRef((
           }
 
           lastManualStopRef.current = null;
+          setHasPendingStopModal(false);
         } catch (error) {
           console.error('❌ Erreur lors de la sauvegarde:', error);
 
@@ -1321,6 +1354,7 @@ const TimerComponent = forwardRef((
       setShowSubjectModal(false);
       setSubjectInput('');
       setPendingConfirmationSubject('');
+      setHasPendingStopModal(false);
       carriedSessionDurationRef.current = 0;
 
     } else if (subjectModalType === 'change') {
@@ -1362,6 +1396,7 @@ const TimerComponent = forwardRef((
     setPendingConfirmationSubject('');
     setSubjectInput('');
     pendingManualStopRef.current = null;
+    setHasPendingStopModal(false);
 
     if (subjectModalType === 'stop') {
       const lastStop = lastManualStopRef.current;
