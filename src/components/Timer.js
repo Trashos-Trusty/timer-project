@@ -680,6 +680,18 @@ const TimerComponent = forwardRef((
     handlePause
   ]);
 
+  useEffect(() => {
+    if (!showOvertimeModal) {
+      return;
+    }
+
+    try {
+      window?.electronAPI?.showMainWindow?.();
+    } catch (error) {
+      console.error("Erreur lors de l'affichage forcé de la fenêtre principale:", error);
+    }
+  }, [showOvertimeModal]);
+
   const handleInactivityTimeout = useCallback(() => {
     if (!isRunning || showInactivityModal) {
       return;
