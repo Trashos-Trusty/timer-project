@@ -352,9 +352,20 @@ const TimerComponent = forwardRef((
       setSessionStartTime(selectedProject.sessionStartTime || null);
       setAccumulatedSessionTime(projectAccumulatedTime);
       accumulatedSessionTimeRef.current = projectAccumulatedTime;
-      setShowOvertimeModal(false);
-      setHasAcknowledgedOvertime(false);
-      setAutoPausedForOvertime(false);
+      const projectTotalTime = selectedProject.totalTime || 0;
+      const isProjectOvertime = projectTotalTime > 0 && projectCurrentTime >= projectTotalTime;
+      const shouldShowOvertimeModal =
+        isProjectOvertime && selectedProject.status !== 'running';
+
+      if (shouldShowOvertimeModal) {
+        setShowOvertimeModal(true);
+        setAutoPausedForOvertime(true);
+        setHasAcknowledgedOvertime(false);
+      } else {
+        setShowOvertimeModal(false);
+        setHasAcknowledgedOvertime(false);
+        setAutoPausedForOvertime(false);
+      }
 
       // S'assurer que toutes les sessions ont une propriété date correcte
       const sessionsWithDate = (selectedProject.workSessions || []).map(session => {
