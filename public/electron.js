@@ -118,6 +118,64 @@ function createMiniWindow() {
   return miniWindow;
 }
 
+function bringMainWindowToFront() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  try {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    const wasAlwaysOnTop = mainWindow.isAlwaysOnTop();
+    const canSetVisibleEverywhere = typeof mainWindow.setVisibleOnAllWorkspaces === 'function';
+
+    try {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    } catch (error) {
+      console.warn("Impossible d'activer temporairement alwaysOnTop:", error);
+    }
+
+    if (canSetVisibleEverywhere) {
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
+
+    if (process.platform === 'darwin') {
+      app.focus({ steal: true });
+    } else {
+      app.focus();
+    }
+
+    mainWindow.show();
+    mainWindow.focus();
+
+    if (typeof mainWindow.moveTop === 'function') {
+      mainWindow.moveTop();
+    }
+
+    mainWindow.flashFrame(true);
+
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+
+      if (!wasAlwaysOnTop) {
+        mainWindow.setAlwaysOnTop(false);
+      }
+
+      if (canSetVisibleEverywhere) {
+        mainWindow.setVisibleOnAllWorkspaces(false);
+      }
+
+      mainWindow.flashFrame(false);
+    }, 2000);
+  } catch (error) {
+    console.error('Erreur lors de la mise au premier plan de la fenêtre principale:', error);
+  }
+}
+
 function createWindow() {
   // Créer la fenêtre principale de l'application
   mainWindow = new BrowserWindow({
@@ -590,11 +648,7 @@ ipcMain.handle('set-mini-timer-visibility', async (event, shouldShow) => {
 ipcMain.handle('show-main-window', async () => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.show();
-      mainWindow.focus();
+      bringMainWindowToFront();
     }
 
     if (miniWindow && !miniWindow.isDestroyed()) {
