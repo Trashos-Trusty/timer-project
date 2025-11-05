@@ -82,6 +82,7 @@ const TimerComponent = forwardRef((
   const inactivityTimeoutRef = useRef(null);
   const scheduleInactivityCheckRef = useRef(() => {});
   const lastInteractionRef = useRef(Date.now());
+  const ignoreNextEnterRef = useRef(false);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -562,6 +563,7 @@ const TimerComponent = forwardRef((
       setSubjectModalType('start');
       setSubjectInput('');
       setPendingConfirmationSubject('');
+      ignoreNextEnterRef.current = true;
       setShowSubjectModal(true);
       return;
     }
@@ -1048,6 +1050,7 @@ const TimerComponent = forwardRef((
           setPendingConfirmationSubject(sessionSubjectForModal);
           setSubjectInput(sessionSubjectForModal);
           setHasPendingStopModal(true);
+          ignoreNextEnterRef.current = true;
           setShowSubjectModal(true);
         }
       }
@@ -1186,6 +1189,7 @@ const TimerComponent = forwardRef((
     }
 
     if (!showSubjectModal) {
+      ignoreNextEnterRef.current = true;
       setShowSubjectModal(true);
     }
 
@@ -1211,6 +1215,7 @@ const TimerComponent = forwardRef((
   }, [showSubjectModal, subjectModalType]);
 
   const handleSubjectSubmit = async () => {
+    ignoreNextEnterRef.current = false;
     const newSubject = subjectInput.trim();
     if (!newSubject) return;
 
@@ -1392,6 +1397,7 @@ const TimerComponent = forwardRef((
   };
 
   const handleSubjectModalCancel = async () => {
+    ignoreNextEnterRef.current = false;
     setShowSubjectModal(false);
     setPendingConfirmationSubject('');
     setSubjectInput('');
@@ -2489,7 +2495,20 @@ const TimerComponent = forwardRef((
                 type="text"
                 value={subjectInput}
                 onChange={(e) => setSubjectInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSubjectSubmit()}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') {
+                    return;
+                  }
+
+                  if (ignoreNextEnterRef.current) {
+                    ignoreNextEnterRef.current = false;
+                    e.preventDefault();
+                    return;
+                  }
+
+                  e.preventDefault();
+                  handleSubjectSubmit();
+                }}
                 className="input w-full"
                 placeholder="Ex: Intégration responsive, Debug API..."
                 autoFocus
