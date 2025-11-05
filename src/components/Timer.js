@@ -67,6 +67,7 @@ const TimerComponent = forwardRef((
   const inactivityDurationSeconds = inactivityContext?.idleSeconds ?? INACTIVITY_THRESHOLD_SECONDS;
 
   const intervalRef = useRef(null);
+  const hasAcknowledgedOvertimeRef = useRef(hasAcknowledgedOvertime);
   const activeSessionSubjectRef = useRef('');
   const lastProjectUpdateRef = useRef({ projectId: null, lastSaved: null });
   const lastManualStopRef = useRef(null);
@@ -203,6 +204,10 @@ const TimerComponent = forwardRef((
   }, [currentTime]);
 
   useEffect(() => {
+    hasAcknowledgedOvertimeRef.current = hasAcknowledgedOvertime;
+  }, [hasAcknowledgedOvertime]);
+
+  useEffect(() => {
     if (!selectedProject?.totalTime) {
       setShowOvertimeModal(false);
       setAutoPausedForOvertime(false);
@@ -281,6 +286,11 @@ const TimerComponent = forwardRef((
 
       const { projectId: lastProjectId, lastSaved: lastAppliedSaved } = lastProjectUpdateRef.current;
       const isSameProject = lastProjectId === selectedProject.id;
+
+      if (!isSameProject) {
+        setHasAcknowledgedOvertime(false);
+        hasAcknowledgedOvertimeRef.current = false;
+      }
       const hasProcessedLastSaved =
         projectLastSaved !== null && lastAppliedSaved !== null && projectLastSaved === lastAppliedSaved;
       const isRunningSameSessionUpdate =
@@ -355,7 +365,9 @@ const TimerComponent = forwardRef((
       const projectTotalTime = selectedProject.totalTime || 0;
       const isProjectOvertime = projectTotalTime > 0 && projectCurrentTime >= projectTotalTime;
       const shouldShowOvertimeModal =
-        isProjectOvertime && selectedProject.status !== 'running';
+        isProjectOvertime &&
+        selectedProject.status === 'running' &&
+        !hasAcknowledgedOvertimeRef.current;
 
       if (shouldShowOvertimeModal) {
         setShowOvertimeModal(true);
@@ -363,7 +375,6 @@ const TimerComponent = forwardRef((
         setHasAcknowledgedOvertime(false);
       } else {
         setShowOvertimeModal(false);
-        setHasAcknowledgedOvertime(false);
         setAutoPausedForOvertime(false);
       }
 
