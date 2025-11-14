@@ -366,16 +366,23 @@ const TimerComponent = forwardRef((
       accumulatedSessionTimeRef.current = projectAccumulatedTime;
       const projectTotalTime = selectedProject.totalTime || 0;
       const isProjectOvertime = projectTotalTime > 0 && projectCurrentTime >= projectTotalTime;
+      const hasUserAcknowledgedOvertime = hasAcknowledgedOvertimeRef.current;
+      const projectAutoPausedForOvertime =
+        Boolean(selectedProject.autoPausedForOvertime) ||
+        (isProjectOvertime && selectedProject.status === 'paused');
       const shouldShowOvertimeModal =
         isProjectOvertime &&
-        selectedProject.status === 'running' &&
-        !hasAcknowledgedOvertimeRef.current;
+        !hasUserAcknowledgedOvertime &&
+        (selectedProject.status === 'running' || projectAutoPausedForOvertime);
 
       if (shouldShowOvertimeModal) {
         setShowOvertimeModal(true);
-        setAutoPausedForOvertime(true);
-        setHasAcknowledgedOvertime(false);
-      } else {
+        setAutoPausedForOvertime(projectAutoPausedForOvertime);
+
+        if (projectAutoPausedForOvertime) {
+          setHasAcknowledgedOvertime(false);
+        }
+      } else if (!isProjectOvertime || hasUserAcknowledgedOvertime) {
         setShowOvertimeModal(false);
         setAutoPausedForOvertime(false);
       }
