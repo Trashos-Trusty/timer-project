@@ -8,7 +8,8 @@ import {
   Server,
   AlertTriangle,
   Download,
-  MessageCircle
+  MessageCircle,
+  RefreshCw
 } from 'lucide-react';
 import { TRUSTY_TIMER_LOGO_DATA_URL } from '../assets/trustytimerLogoData';
 
@@ -22,7 +23,9 @@ const Header = ({
   isApiConfigured,
   freelanceInfo,
   disabled = false,
-  isTimerRunning = false
+  isTimerRunning = false,
+  pendingSync = false,
+  pendingSyncCount = 0
 }) => {
   // Mode développeur - désactivé par défaut pour les utilisateurs finaux
   // Pour l'activer, changer cette ligne ou créer un fichier .env avec REACT_APP_DEVELOPER_MODE=true
@@ -61,6 +64,20 @@ const Header = ({
               {freelanceInfo ? `Bonjour ${freelanceInfo.name}` : 'Gestionnaire de temps de projet'}
             </p>
           </div>
+
+          {pendingSync && (
+            <div
+              className="hidden sm:flex items-center gap-1 ml-3 px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-medium"
+              title="Synchronisation automatique programmée"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>
+                {pendingSyncCount > 0
+                  ? `${pendingSyncCount} ${pendingSyncCount > 1 ? 'éléments' : 'élément'} en attente`
+                  : 'Synchronisation en attente'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Switch Timer/Chronomètre */}

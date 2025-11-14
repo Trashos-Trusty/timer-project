@@ -69,6 +69,26 @@ function App() {
     }
     return true;
   });
+  const [offlineSyncInfo, setOfflineSyncInfo] = useState(() => {
+    const status = connectionManager.getStatus();
+    return status.offlineSync || {
+      state: 'idle',
+      pending: 0,
+      lastError: null,
+      lastSyncedAt: null,
+    };
+  });
+  const [hasPendingSync, setHasPendingSync] = useState(() => {
+    const status = connectionManager.getStatus();
+    if (status.pendingSync) {
+      return true;
+    }
+
+    const offlineSync = status.offlineSync || { state: 'idle', pending: 0 };
+    return offlineSync.state === 'pending'
+      || offlineSync.state === 'syncing'
+      || (offlineSync.pending ?? 0) > 0;
+  });
   const [miniTimerPosition, setMiniTimerPosition] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -183,6 +203,46 @@ function App() {
       return !prev;
     });
   }, [canShowMiniTimer]);
+
+  useEffect(() => {
+    if (isMiniWindowMode) {
+      return undefined;
+    }
+
+    const handleConnectionUpdate = (event = {}) => {
+      const status = connectionManager.getStatus();
+      const offlineSync = status.offlineSync || { state: 'idle', pending: 0 };
+
+      setOfflineSyncInfo(offlineSync);
+
+      const nextHasPending = Boolean(
+        status.pendingSync
+        || offlineSync.state === 'pending'
+        || offlineSync.state === 'syncing'
+        || (offlineSync.pending ?? 0) > 0
+      );
+      setHasPendingSync(nextHasPending);
+
+      if (!isAuthenticated) {
+        return;
+      }
+
+      if (event.type === 'offline_sync_complete') {
+        loadProjects();
+      } else if (event.type === 'offline_sync_error' && event.payload?.processed > 0) {
+        loadProjects();
+      }
+    };
+
+    const unsubscribe = connectionManager.addListener(handleConnectionUpdate);
+    handleConnectionUpdate({ type: 'init' });
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [isAuthenticated, isMiniWindowMode, loadProjects]);
 
   useEffect(() => {
     setMiniTimerPosition((prev) => clampMiniTimerPosition(prev));
@@ -646,30 +706,6 @@ function App() {
     return unsubscribe;
   }, [isAuthenticated, isMiniWindowMode, loadProjects]);
 
-  useEffect(() => {
-    if (isMiniWindowMode) {
-      return;
-    }
-
-    if (!isAuthenticated) {
-      return;
-    }
-
-    if (!window?.electronAPI?.onOfflineSyncStatus) {
-      return;
-    }
-
-    const unsubscribe = window.electronAPI.onOfflineSyncStatus((payload = {}) => {
-      console.log('📡 Statut de synchronisation offline reçu:', payload);
-
-      if (payload.status === 'success' || payload.status === 'partial') {
-        loadProjects();
-      }
-    });
-
-    return unsubscribe;
-  }, [isAuthenticated, isMiniWindowMode, loadProjects]);
-
   // Gestionnaire d'événements du menu Electron
   useEffect(() => {
     if (isMiniWindowMode) {
@@ -1058,6 +1094,8 @@ function App() {
         freelanceInfo={freelanceInfo}
         disabled={isSaving}
         isTimerRunning={isTimerRunning}
+        pendingSync={hasPendingSync}
+        pendingSyncCount={offlineSyncInfo?.pending ?? 0}
       />
       
       <div className="flex-1 flex overflow-hidden">

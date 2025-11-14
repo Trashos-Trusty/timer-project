@@ -45,6 +45,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('offline-sync-status', handler);
     return () => ipcRenderer.removeListener('offline-sync-status', handler);
   },
+  onOfflineSyncPending: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('offline-sync-pending', handler);
+    return () => ipcRenderer.removeListener('offline-sync-pending', handler);
+  },
+  onOfflineSyncing: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('offline-syncing', handler);
+    return () => ipcRenderer.removeListener('offline-syncing', handler);
+  },
+  onOfflineSyncComplete: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('offline-sync-complete', handler);
+    return () => ipcRenderer.removeListener('offline-sync-complete', handler);
+  },
+  onOfflineSyncError: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('offline-sync-error', handler);
+    return () => ipcRenderer.removeListener('offline-sync-error', handler);
+  },
   
   // Gestion des erreurs de connexion
   handleConnectionError: () => ipcRenderer.invoke('handle-connection-error'),
