@@ -646,6 +646,30 @@ function App() {
     return unsubscribe;
   }, [isAuthenticated, isMiniWindowMode, loadProjects]);
 
+  useEffect(() => {
+    if (isMiniWindowMode) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (!window?.electronAPI?.onOfflineSyncStatus) {
+      return;
+    }
+
+    const unsubscribe = window.electronAPI.onOfflineSyncStatus((payload = {}) => {
+      console.log('📡 Statut de synchronisation offline reçu:', payload);
+
+      if (payload.status === 'success' || payload.status === 'partial') {
+        loadProjects();
+      }
+    });
+
+    return unsubscribe;
+  }, [isAuthenticated, isMiniWindowMode, loadProjects]);
+
   // Gestionnaire d'événements du menu Electron
   useEffect(() => {
     if (isMiniWindowMode) {

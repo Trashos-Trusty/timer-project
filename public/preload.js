@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('connection-status-changed', callback);
     return () => ipcRenderer.removeListener('connection-status-changed', callback);
   },
+
+  onOfflineSyncStatus: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('offline-sync-status', handler);
+    return () => ipcRenderer.removeListener('offline-sync-status', handler);
+  },
   
   // Gestion des erreurs de connexion
   handleConnectionError: () => ipcRenderer.invoke('handle-connection-error'),
