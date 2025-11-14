@@ -52,6 +52,7 @@ function setupProductionLogging() {
 const ConfigManager = require('./utils/configManager');
 const ApiManager = require('./utils/apiManager');
 const UpdateManager = require('./utils/updateManager');
+const offlineQueue = require('./services/offlineQueue');
 
 // Variables globales
 let mainWindow;
@@ -61,12 +62,184 @@ let apiManager;
 let updateManager;
 let lastMiniTimerSnapshot = null;
 
+const NETWORK_PING_INTERVAL = 60 * 1000;
+let networkMonitorInterval = null;
+let isNetworkReachable = null;
+let isDrainingOfflineQueue = false;
+
 const appStartUrl = isDev
   ? 'http://localhost:3000'
   : `file://${path.join(__dirname, '../build/index.html')}`;
 
 if (!isDev) {
   setupProductionLogging();
+}
+
+function broadcastOfflineStatus(payload) {
+  const windows = BrowserWindow.getAllWindows();
+  windows.forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('offline-sync-status', payload);
+    }
+  });
+}
+
+function isNetworkError(error) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  if (error.isNetworkError) {
+    return true;
+  }
+
+  const status = error.status || error.statusCode;
+  if (status && [502, 503, 504].includes(status)) {
+    return true;
+  }
+
+  const code = error.code || error.networkCode;
+  if (code && /ECONN|EAI_AGAIN|ENOTFOUND|ETIMEDOUT/i.test(String(code))) {
+    return true;
+  }
+
+  const name = error.name || '';
+  if (name === 'TypeError') {
+    return true;
+  }
+
+  const message = error.message || '';
+  return /fetch|network|connexion|ECONN|EAI_AGAIN|ENOTFOUND|ETIMEDOUT/i.test(message);
+}
+
+async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
+  if (!apiManager || !configManager || !configManager.isApiConfigured()) {
+    return;
+  }
+
+  const pending = await offlineQueue.getPending();
+  if (!pending.length || isDrainingOfflineQueue) {
+    return;
+  }
+
+  if (!skipConnectivityCheck) {
+    try {
+      await apiManager.testConnection();
+      isNetworkReachable = true;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        isNetworkReachable = false;
+        broadcastOfflineStatus({
+          status: 'offline',
+          message: error.message,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.error('Erreur inattendue lors du test réseau:', error);
+      }
+      return;
+    }
+  }
+
+  isDrainingOfflineQueue = true;
+  broadcastOfflineStatus({
+    status: 'started',
+    total: pending.length,
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    const result = await offlineQueue.drain(async (projectData, originalName = null) => {
+      await apiManager.saveProject(projectData, originalName);
+    });
+
+    if (result.failed === 0) {
+      broadcastOfflineStatus({
+        status: 'success',
+        processed: result.processed,
+        pending: 0,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (result.processed > 0) {
+      broadcastOfflineStatus({
+        status: 'partial',
+        processed: result.processed,
+        failed: result.failed,
+        pending: result.failed,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      broadcastOfflineStatus({
+        status: 'error',
+        failed: result.failed,
+        pending: result.failed,
+        message: 'Aucune entrée n\'a pu être synchronisée.',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error('Erreur lors de la resynchronisation hors ligne:', error);
+    broadcastOfflineStatus({
+      status: 'error',
+      message: error.message,
+      pending: await offlineQueue.getPending().then((items) => items.length).catch(() => null),
+      timestamp: new Date().toISOString(),
+    });
+  } finally {
+    isDrainingOfflineQueue = false;
+  }
+}
+
+function startNetworkWatcher() {
+  if (networkMonitorInterval) {
+    return;
+  }
+
+  const checkConnectivity = async () => {
+    if (!apiManager || !configManager || !configManager.isApiConfigured()) {
+      return;
+    }
+
+    const pending = await offlineQueue.getPending();
+    if (!pending.length) {
+      return;
+    }
+
+    try {
+      await apiManager.testConnection();
+      if (!isNetworkReachable) {
+        isNetworkReachable = true;
+        broadcastOfflineStatus({
+          status: 'online',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      await attemptOfflineSync({ skipConnectivityCheck: true });
+    } catch (error) {
+      if (isNetworkError(error)) {
+        if (isNetworkReachable !== false) {
+          isNetworkReachable = false;
+          broadcastOfflineStatus({
+            status: 'offline',
+            message: error.message,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } else {
+        console.error('Erreur inattendue lors de la vérification réseau périodique:', error);
+      }
+    }
+  };
+
+  networkMonitorInterval = setInterval(() => {
+    checkConnectivity().catch((error) => {
+      console.error('Erreur lors du watcher réseau:', error);
+    });
+  }, NETWORK_PING_INTERVAL);
+
+  checkConnectivity().catch((error) => {
+    console.error('Erreur lors de la vérification réseau initiale:', error);
+  });
 }
 
 function createMiniWindow() {
@@ -357,15 +530,21 @@ app.whenReady().then(async () => {
     configManager = null;
     apiManager = null;
   }
-  
+
   createWindow();
   createMenu();
+  startNetworkWatcher();
 });
 
 app.on('window-all-closed', async () => {
   // Nettoyer les ressources API
   if (apiManager) {
     await apiManager.cleanup();
+  }
+
+  if (networkMonitorInterval) {
+    clearInterval(networkMonitorInterval);
+    networkMonitorInterval = null;
   }
 
   if (miniWindow && !miniWindow.isDestroyed()) {
@@ -380,6 +559,13 @@ app.on('window-all-closed', async () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+
+app.on('before-quit', () => {
+  if (networkMonitorInterval) {
+    clearInterval(networkMonitorInterval);
+    networkMonitorInterval = null;
   }
 });
 
@@ -449,7 +635,7 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
     if (!configManager || !configManager.isApiConfigured()) {
       throw new Error('Configuration API requise');
     }
-    
+
     // Debug: Afficher les paramètres reçus par Electron
     console.log('⚡ Electron reçoit:', {
       projectId: projectData.id,
@@ -457,11 +643,28 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       originalName: originalName,
       hasOriginalName: !!originalName
     });
-    
+
     await apiManager.saveProject(projectData, originalName);
     console.log('Projet sauvegardé via API:', projectData.name);
     return projectData;
   } catch (error) {
+    if (isNetworkError(error)) {
+      console.warn('Connexion indisponible, mise en attente de la sauvegarde:', error);
+      try {
+        await offlineQueue.enqueue({ projectData, originalName });
+        const pending = await offlineQueue.getPending();
+        broadcastOfflineStatus({
+          status: 'queued',
+          pending: pending.length,
+          projectId: projectData?.id ?? null,
+          timestamp: new Date().toISOString(),
+        });
+        return { ...projectData, queued: true };
+      } catch (queueError) {
+        console.error('Impossible de mettre la sauvegarde hors ligne en file d\'attente:', queueError);
+      }
+    }
+
     console.error('Erreur lors de la sauvegarde:', error);
     throw error;
   }

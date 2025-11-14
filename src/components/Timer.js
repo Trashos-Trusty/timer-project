@@ -109,13 +109,28 @@ const TimerComponent = forwardRef((
 
     try {
       const result = await window.electronAPI.saveProject(projectData);
-      const mergedProject =
-        result && typeof result === 'object'
-          ? { ...projectData, ...result }
-          : projectData;
+      const isResultObject = result && typeof result === 'object';
+      const isQueued = Boolean(isResultObject && result.queued);
+      const baseProject = { ...projectData };
+      const payload = isResultObject ? result : {};
+      const mergedProject = { ...baseProject, ...payload };
+
+      if (isQueued) {
+        mergedProject.pendingSync = true;
+      } else if (mergedProject.pendingSync) {
+        mergedProject.pendingSync = false;
+      }
+
+      if (!isQueued && mergedProject.queued) {
+        delete mergedProject.queued;
+      }
 
       if (onProjectUpdate) {
         onProjectUpdate(mergedProject);
+      }
+
+      if (isQueued) {
+        console.info('💾 Sauvegarde mise en attente pour synchronisation ultérieure.');
       }
 
       return mergedProject;

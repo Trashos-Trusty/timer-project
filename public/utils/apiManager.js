@@ -527,20 +527,43 @@ class ApiManager {
 
     const cause = error.cause || {};
     let userMessage = defaultMessage;
+    let isNetworkIssue = false;
 
     if (cause.code === 'UND_ERR_CONNECT_TIMEOUT') {
       userMessage = 'La connexion au serveur a expiré. Vérifiez votre connexion internet ou l\'accessibilité du serveur API.';
+      isNetworkIssue = true;
     } else if (cause.code === 'UND_ERR_CONNECT') {
       userMessage = 'Impossible de se connecter au serveur. Vérifiez l\'URL de l\'API et votre connexion réseau.';
+      isNetworkIssue = true;
     } else if (cause.code === 'UND_ERR_DNS') {
       userMessage = 'Le nom de domaine de l\'API est introuvable. Assurez-vous que l\'adresse est correcte.';
+      isNetworkIssue = true;
     } else if (error.name === 'AbortError') {
       userMessage = 'La requête a été annulée avant d\'être terminée. Veuillez réessayer.';
     }
 
+    if (error.name === 'TypeError' || /fetch/i.test(error.message || '')) {
+      isNetworkIssue = true;
+    }
+
+    const userFacingError = new Error(userMessage);
+
+    if (typeof error.status === 'number') {
+      userFacingError.status = error.status;
+    }
+
+    if (isNetworkIssue) {
+      userFacingError.isNetworkError = true;
+      if (cause?.code) {
+        userFacingError.networkCode = cause.code;
+      } else if (error.code) {
+        userFacingError.networkCode = error.code;
+      }
+    }
+
     return {
       originalError: error,
-      userFacingError: new Error(userMessage)
+      userFacingError
     };
   }
 
