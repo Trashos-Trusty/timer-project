@@ -204,6 +204,66 @@ function App() {
     });
   }, [canShowMiniTimer]);
 
+  // Charger les projets
+  const loadProjects = useCallback(async () => {
+    try {
+      if (isMiniWindowMode) {
+        return;
+      }
+
+      if (window.electronAPI) {
+        console.log('🔄 Chargement des projets...');
+        const rawProjects = await window.electronAPI.loadProjects();
+        const loadedProjects = Array.isArray(rawProjects)
+          ? rawProjects
+          : Array.isArray(rawProjects?.projects)
+            ? rawProjects.projects
+            : [];
+
+        if (!Array.isArray(rawProjects)) {
+          console.warn('⚠️ Réponse inattendue lors du chargement des projets:', rawProjects);
+        }
+
+        // Filtrer les doublons par ID - garder le plus récent
+        const projectMap = new Map();
+
+        loadedProjects.forEach(project => {
+          if (!project?.id) {
+            return;
+          }
+
+          const existingProject = projectMap.get(project.id);
+          if (!existingProject ||
+              (project.lastSaved && (!existingProject.lastSaved || project.lastSaved > existingProject.lastSaved))) {
+            projectMap.set(project.id, project);
+          }
+        });
+
+        // Convertir la Map en tableau et normaliser les données
+        const normalizedProjects = [];
+        projectMap.forEach(project => {
+          normalizedProjects.push(normalizeProject(project));
+        });
+
+        // Trier par nom
+        normalizedProjects.sort((a, b) => {
+          const nameA = (a?.name || '').toString().toLowerCase();
+          const nameB = (b?.name || '').toString().toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+
+        console.log(`📋 Projets chargés: ${loadedProjects.length} total, ${normalizedProjects.length} uniques`);
+        setProjects(normalizedProjects);
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors du chargement des projets:', error);
+      // Notifier le gestionnaire de connexion en cas d'erreur réseau
+      if (error.message && (error.message.includes('fetch') || error.message.includes('network'))) {
+        connectionManager.handleConnectionError();
+      }
+    }
+  }, [isMiniWindowMode]);
+
   useEffect(() => {
     if (isMiniWindowMode) {
       return undefined;
@@ -517,66 +577,6 @@ function App() {
     return () => {
       api?.setMiniTimerVisibility?.(false);
     };
-  }, [isMiniWindowMode]);
-
-  // Charger les projets
-  const loadProjects = useCallback(async () => {
-    try {
-      if (isMiniWindowMode) {
-        return;
-      }
-
-      if (window.electronAPI) {
-        console.log('🔄 Chargement des projets...');
-        const rawProjects = await window.electronAPI.loadProjects();
-        const loadedProjects = Array.isArray(rawProjects)
-          ? rawProjects
-          : Array.isArray(rawProjects?.projects)
-            ? rawProjects.projects
-            : [];
-
-        if (!Array.isArray(rawProjects)) {
-          console.warn('⚠️ Réponse inattendue lors du chargement des projets:', rawProjects);
-        }
-
-        // Filtrer les doublons par ID - garder le plus récent
-        const projectMap = new Map();
-
-        loadedProjects.forEach(project => {
-          if (!project?.id) {
-            return;
-          }
-
-          const existingProject = projectMap.get(project.id);
-          if (!existingProject ||
-              (project.lastSaved && (!existingProject.lastSaved || project.lastSaved > existingProject.lastSaved))) {
-            projectMap.set(project.id, project);
-          }
-        });
-
-        // Convertir la Map en tableau et normaliser les données
-        const normalizedProjects = [];
-        projectMap.forEach(project => {
-          normalizedProjects.push(normalizeProject(project));
-        });
-
-        // Trier par nom
-        normalizedProjects.sort((a, b) => {
-          const nameA = (a?.name || '').toString().toLowerCase();
-          const nameB = (b?.name || '').toString().toLowerCase();
-          return nameA.localeCompare(nameB);
-        });
-
-        console.log(`📋 Projets chargés: ${loadedProjects.length} total, ${normalizedProjects.length} uniques`);
-        setProjects(normalizedProjects);
-      }
-    } catch (error) {
-      console.error('❌ Erreur lors du chargement des projets:', error);
-      // Notifier le gestionnaire de connexion en cas d'erreur réseau
-      if (error.message && (error.message.includes('fetch') || error.message.includes('network'))) {
-        connectionManager.handleConnectionError();
-      }
-    }
   }, [isMiniWindowMode]);
 
   // Vérifier la configuration API et l'authentification
