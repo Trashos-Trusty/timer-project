@@ -53,6 +53,7 @@ const ConfigManager = require('./utils/configManager');
 const ApiManager = require('./utils/apiManager');
 const UpdateManager = require('./utils/updateManager');
 const offlineQueue = require('./services/offlineQueue');
+const projectCache = require('./services/projectCache');
 
 // Variables globales
 let mainWindow;
@@ -631,10 +632,61 @@ ipcMain.handle('load-projects', async () => {
       console.log('API non configuré, retour d\'une liste vide');
       return [];
     }
-    
-    return await apiManager.loadProjects();
+
+    const projects = await apiManager.loadProjects();
+
+    try {
+      await projectCache.setProjects(projects);
+    } catch (cacheError) {
+      console.warn('Impossible de mettre à jour le cache des projets:', cacheError);
+    }
+
+    return projects;
   } catch (error) {
     console.error('Erreur lors du chargement des projets:', error);
+
+    if (isNetworkError(error)) {
+      try {
+        const cachedProjects = await projectCache.getCachedProjects();
+        const pendingEntries = await offlineQueue.getPending();
+
+        const queuedProjects = pendingEntries
+          .map((entry) => {
+            if (!entry || !entry.projectData) {
+              return null;
+            }
+
+            let project;
+            try {
+              project = JSON.parse(JSON.stringify(entry.projectData));
+            } catch (serializationError) {
+              project = { ...entry.projectData };
+            }
+
+            if (!project) {
+              return null;
+            }
+
+            const result = { ...project, pendingSync: true };
+
+            if (!result.lastSaved && entry.enqueuedAt) {
+              result.lastSaved = entry.enqueuedAt;
+            }
+
+            if ('queued' in result) {
+              delete result.queued;
+            }
+
+            return result;
+          })
+          .filter(Boolean);
+
+        return [...cachedProjects, ...queuedProjects];
+      } catch (cacheError) {
+        console.error('Impossible de charger le cache local des projets:', cacheError);
+      }
+    }
+
     return [];
   }
 });
@@ -679,12 +731,27 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
 
     await apiManager.saveProject(projectData, originalName);
     console.log('Projet sauvegardé via API:', projectData.name);
+
+    try {
+      const projectToCache = { ...projectData };
+      delete projectToCache.queued;
+      delete projectToCache.pendingSync;
+      await projectCache.upsertProject(projectToCache);
+    } catch (cacheError) {
+      console.warn('Impossible de mettre à jour le cache local après sauvegarde:', cacheError);
+    }
+
     return projectData;
   } catch (error) {
     if (isNetworkError(error)) {
       console.warn('Connexion indisponible, mise en attente de la sauvegarde:', error);
       try {
         await offlineQueue.enqueue({ projectData, originalName });
+        try {
+          await projectCache.upsertProject({ ...projectData, pendingSync: true });
+        } catch (cacheError) {
+          console.warn('Impossible de mettre à jour le cache local pour la sauvegarde hors ligne:', cacheError);
+        }
         const pending = await offlineQueue.getPending();
         broadcastOfflineStatus({
           status: 'queued',
@@ -692,7 +759,7 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
           projectId: projectData?.id ?? null,
           timestamp: new Date().toISOString(),
         });
-        return { ...projectData, queued: true };
+        return { ...projectData, queued: true, pendingSync: true };
       } catch (queueError) {
         console.error('Impossible de mettre la sauvegarde hors ligne en file d\'attente:', queueError);
       }
