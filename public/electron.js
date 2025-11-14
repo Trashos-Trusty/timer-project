@@ -75,13 +75,41 @@ if (!isDev) {
   setupProductionLogging();
 }
 
-function broadcastOfflineStatus(payload) {
+function broadcastToAll(channel, payload) {
   const windows = BrowserWindow.getAllWindows();
   windows.forEach((win) => {
     if (!win.isDestroyed()) {
-      win.webContents.send('offline-sync-status', payload);
+      win.webContents.send(channel, payload);
     }
   });
+}
+
+function broadcastOfflineSyncEvent(status, payload) {
+  switch (status) {
+    case 'queued':
+      broadcastToAll('offline-sync-pending', payload);
+      break;
+    case 'started':
+      broadcastToAll('offline-syncing', payload);
+      break;
+    case 'success':
+      broadcastToAll('offline-sync-complete', payload);
+      break;
+    case 'partial':
+    case 'error':
+      broadcastToAll('offline-sync-error', payload);
+      break;
+    default:
+      break;
+  }
+}
+
+function broadcastOfflineStatus(payload) {
+  broadcastToAll('offline-sync-status', payload);
+
+  if (payload && payload.status) {
+    broadcastOfflineSyncEvent(payload.status, payload);
+  }
 }
 
 function isNetworkError(error) {
@@ -129,11 +157,12 @@ async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
     } catch (error) {
       if (isNetworkError(error)) {
         isNetworkReachable = false;
-        broadcastOfflineStatus({
+        const offlinePayload = {
           status: 'offline',
           message: error.message,
           timestamp: new Date().toISOString(),
-        });
+        };
+        broadcastOfflineStatus(offlinePayload);
       } else {
         console.error('Erreur inattendue lors du test réseau:', error);
       }
@@ -142,11 +171,13 @@ async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
   }
 
   isDrainingOfflineQueue = true;
-  broadcastOfflineStatus({
+  const startPayload = {
     status: 'started',
     total: pending.length,
+    pending: pending.length,
     timestamp: new Date().toISOString(),
-  });
+  };
+  broadcastOfflineStatus(startPayload);
 
   try {
     const result = await offlineQueue.drain(async (projectData, originalName = null) => {
@@ -179,10 +210,11 @@ async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
     }
   } catch (error) {
     console.error('Erreur lors de la resynchronisation hors ligne:', error);
+    const pendingAfterError = await offlineQueue.getPending().then((items) => items.length).catch(() => null);
     broadcastOfflineStatus({
       status: 'error',
       message: error.message,
-      pending: await offlineQueue.getPending().then((items) => items.length).catch(() => null),
+      pending: pendingAfterError,
       timestamp: new Date().toISOString(),
     });
   } finally {
@@ -219,14 +251,15 @@ function startNetworkWatcher() {
       if (isNetworkError(error)) {
         if (isNetworkReachable !== false) {
           isNetworkReachable = false;
-          broadcastOfflineStatus({
-            status: 'offline',
-            message: error.message,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      } else {
-        console.error('Erreur inattendue lors de la vérification réseau périodique:', error);
+        const offlinePayload = {
+          status: 'offline',
+          message: error.message,
+          timestamp: new Date().toISOString(),
+        };
+        broadcastOfflineStatus(offlinePayload);
+      }
+    } else {
+      console.error('Erreur inattendue lors de la vérification réseau périodique:', error);
       }
     }
   };

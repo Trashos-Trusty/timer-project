@@ -52,6 +52,17 @@
 - ✅ **Panneau redimensionnable** sur desktop
 - ✅ **Indicateurs visuels** d'état
 
+## 🔌 Statuts de connexion & synchronisation hors ligne
+
+La barre d'état en haut à droite affiche désormais clairement la situation réseau et la synchronisation hors ligne :
+
+- **Déconnecté** (rouge) : la connexion est perdue, l'application tente automatiquement une reconnexion.
+- **En cache** (ambre) : vos modifications sont sauvegardées localement et seront envoyées dès que possible.
+- **Synchronisation en cours** (bleu) : la file hors ligne est en train d'être envoyée au serveur.
+- **Synchronisation terminée** (vert) : toutes les données en attente ont été synchronisées avec succès.
+
+Un badge discret apparaît aussi dans l'en-tête lorsque des éléments attendent l'envoi ; aucune action manuelle n'est nécessaire, l'application gère la synchronisation pour vous.
+
 ## 🛠️ Architecture Technique
 
 ### **Frontend**
