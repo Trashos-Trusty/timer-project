@@ -17,7 +17,7 @@ import connectionManager from './connectionManager';
 import { isSessionExpiredError, markSessionExpiredError } from './utils/authErrors';
 import './index.css';
 
-const normalizeProject = (project) => {
+function normalizeProject(project) {
   if (!project) {
     return project;
   }
@@ -33,7 +33,7 @@ const normalizeProject = (project) => {
     ...project,
     client
   };
-};
+}
 
 const ONBOARDING_STORAGE_KEY = 'timerProjectOnboardingSeen';
 const FEEDBACK_FALLBACK_EMAIL = 'enguerran@trustystudio.fr';
