@@ -223,95 +223,70 @@ async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
   }
 }
 
-async function forceImmediateOfflineSync({ skipConnectivityCheck = false } = {}) {
-  if (!apiManager || !configManager) {
+async function runNetworkWatcherCheck({ skipInitialConnectivityTest = false } = {}) {
+  if (!apiManager || !configManager || !configManager.isApiConfigured()) {
     return {
-      success: false,
-      error: 'Gestionnaires API non disponibles',
+      attempted: false,
+      reason: 'api_not_configured',
     };
   }
 
-  if (!configManager.isApiConfigured()) {
-    return {
-      success: false,
-      error: 'API non configurée',
-    };
-  }
-
-  if (isDrainingOfflineQueue) {
-    console.log('Synchronisation hors ligne déjà en cours, aucun déclenchement supplémentaire.');
-    return {
-      success: true,
-      draining: true,
-      message: 'Synchronisation déjà en cours',
-    };
-  }
-
-  let pendingBefore = [];
+  let pendingItems;
   try {
-    pendingBefore = await offlineQueue.getPending();
+    pendingItems = await offlineQueue.getPending();
   } catch (error) {
-    console.error('Impossible de récupérer la file hors ligne avant la synchronisation forcée:', error);
+    console.error('Impossible de récupérer la file hors ligne pour le watcher réseau:', error);
+    throw error;
+  }
+
+  const pendingCount = pendingItems.length;
+  if (pendingCount === 0) {
     return {
-      success: false,
-      error: error.message,
+      attempted: false,
+      reason: 'no_pending',
     };
   }
 
-  const initialCount = pendingBefore.length;
-
-  if (initialCount === 0) {
-    return {
-      success: true,
-      drained: 0,
-      remaining: 0,
-      message: 'Aucune donnée hors ligne à synchroniser',
-    };
-  }
-
-  try {
-    await attemptOfflineSync({ skipConnectivityCheck });
-  } catch (error) {
-    console.error('Erreur inattendue lors de la synchronisation forcée:', error);
-    return {
-      success: false,
-      error: error.message,
-      drained: 0,
-      remaining: initialCount,
-    };
-  }
-
-  try {
-    const pendingAfter = await offlineQueue.getPending();
-    const remaining = pendingAfter.length;
-    const drained = Math.max(0, initialCount - remaining);
-
-    if (remaining === 0) {
-      console.log(`Synchronisation hors ligne forcée terminée: ${drained} élément(s) traité(s).`);
-      return {
-        success: true,
-        drained,
-        remaining,
-      };
+  if (!skipInitialConnectivityTest) {
+    try {
+      await apiManager.testConnection();
+      if (isNetworkReachable === false) {
+        broadcastOfflineStatus({
+          status: 'online',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      isNetworkReachable = true;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        if (isNetworkReachable !== false) {
+          isNetworkReachable = false;
+          broadcastOfflineStatus({
+            status: 'offline',
+            message: error.message,
+            pending: pendingCount,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        error.isNetworkError = true;
+      } else {
+        console.error('Erreur inattendue lors du test de connexion réseau:', error);
+      }
+      throw error;
     }
-
-    const warningMessage = `Synchronisation hors ligne incomplète: ${remaining} élément(s) restant(s).`;
-    console.warn(warningMessage);
-    return {
-      success: false,
-      error: warningMessage,
-      drained,
-      remaining,
-    };
-  } catch (error) {
-    console.error('Impossible de vérifier la file hors ligne après la synchronisation forcée:', error);
-    return {
-      success: false,
-      error: error.message,
-      drained: null,
-      remaining: null,
-    };
   }
+
+  try {
+    await attemptOfflineSync({ skipConnectivityCheck: !skipInitialConnectivityTest });
+  } catch (error) {
+    console.error('Erreur lors de la synchronisation déclenchée par le watcher réseau:', error);
+    throw error;
+  }
+
+  return {
+    attempted: true,
+    pendingBefore: pendingCount,
+  };
 }
 
 function startNetworkWatcher() {
@@ -319,52 +294,21 @@ function startNetworkWatcher() {
     return;
   }
 
-  const checkConnectivity = async () => {
-    if (!apiManager || !configManager || !configManager.isApiConfigured()) {
-      return;
-    }
-
-    const pending = await offlineQueue.getPending();
-    if (!pending.length) {
-      return;
-    }
-
-    try {
-      await apiManager.testConnection();
-      if (!isNetworkReachable) {
-        isNetworkReachable = true;
-        broadcastOfflineStatus({
-          status: 'online',
-          timestamp: new Date().toISOString(),
-        });
-      }
-      await attemptOfflineSync({ skipConnectivityCheck: true });
-    } catch (error) {
-      if (isNetworkError(error)) {
-        if (isNetworkReachable !== false) {
-          isNetworkReachable = false;
-        const offlinePayload = {
-          status: 'offline',
-          message: error.message,
-          timestamp: new Date().toISOString(),
-        };
-        broadcastOfflineStatus(offlinePayload);
-      }
-    } else {
-      console.error('Erreur inattendue lors de la vérification réseau périodique:', error);
-      }
-    }
-  };
-
   networkMonitorInterval = setInterval(() => {
-    checkConnectivity().catch((error) => {
-      console.error('Erreur lors du watcher réseau:', error);
-    });
+    runNetworkWatcherCheck()
+      .catch((error) => {
+        if (!isNetworkError(error)) {
+          console.error('Erreur lors du watcher réseau:', error);
+        }
+      });
   }, NETWORK_PING_INTERVAL);
 
-  checkConnectivity().catch((error) => {
-    console.error('Erreur lors de la vérification réseau initiale:', error);
-  });
+  runNetworkWatcherCheck()
+    .catch((error) => {
+      if (!isNetworkError(error)) {
+        console.error('Erreur lors de la vérification réseau initiale:', error);
+      }
+    });
 }
 
 function createMiniWindow() {
@@ -705,17 +649,121 @@ ipcMain.handle('show-message-box', async (event, options) => {
   return result;
 });
 
-ipcMain.handle('force-connection-check', async (_event, options = {}) => {
+ipcMain.handle('handle-connection-error', async (_event, details = {}) => {
+  const serializedDetails = typeof details === 'object' && details !== null ? details : {};
+  const message = serializedDetails.message || 'Erreur de connexion détectée.';
+
+  console.warn('⚠️ Erreur de connexion signalée par le renderer:', serializedDetails);
+
+  isNetworkReachable = false;
+
+  let pendingItems;
   try {
-    const result = await forceImmediateOfflineSync(options);
-    return result;
+    pendingItems = await offlineQueue.getPending();
   } catch (error) {
-    console.error('Erreur lors de la synchronisation forcée via IPC:', error);
+    console.error('Impossible de récupérer la file hors ligne après une erreur de connexion:', error);
+    throw error;
+  }
+
+  const pendingCount = pendingItems.length;
+  broadcastOfflineStatus({
+    status: 'offline',
+    message,
+    pending: pendingCount,
+    timestamp: new Date().toISOString(),
+  });
+
+  startNetworkWatcher();
+
+  try {
+    const result = await runNetworkWatcherCheck({ skipInitialConnectivityTest: true });
     return {
-      success: false,
-      error: error.message,
+      success: true,
+      pending: pendingCount,
+      attempted: Boolean(result?.attempted),
+      reason: result?.reason,
+    };
+  } catch (error) {
+    if (!isNetworkError(error)) {
+      console.error('Erreur lors du redémarrage du watcher réseau après une erreur de connexion:', error);
+    }
+    throw error;
+  }
+});
+
+ipcMain.handle('force-connection-check', async (_event, options = {}) => {
+  const normalizedOptions = typeof options === 'object' && options !== null ? options : {};
+  const skipInitialConnectivityTest = Boolean(
+    normalizedOptions.skipInitialConnectivityTest ?? normalizedOptions.skipConnectivityCheck ?? false
+  );
+
+  if (!apiManager || !configManager) {
+    const error = new Error('Gestionnaires API non disponibles');
+    error.code = 'API_MANAGERS_UNAVAILABLE';
+    throw error;
+  }
+
+  if (!configManager.isApiConfigured()) {
+    const error = new Error('API non configurée');
+    error.code = 'API_NOT_CONFIGURED';
+    throw error;
+  }
+
+  startNetworkWatcher();
+
+  let initialPending;
+  try {
+    initialPending = await offlineQueue.getPending();
+  } catch (error) {
+    console.error('Impossible de récupérer la file hors ligne avant la synchronisation forcée:', error);
+    throw error;
+  }
+
+  const initialCount = initialPending.length;
+  if (initialCount === 0) {
+    return {
+      success: true,
+      drained: 0,
+      remaining: 0,
+      message: 'Aucune donnée hors ligne à synchroniser',
     };
   }
+
+  let watcherResult;
+  try {
+    watcherResult = await runNetworkWatcherCheck({ skipInitialConnectivityTest });
+  } catch (error) {
+    if (!isNetworkError(error)) {
+      console.error('Erreur lors de la synchronisation forcée via IPC:', error);
+    }
+    throw error;
+  }
+
+  let remainingItems;
+  try {
+    remainingItems = await offlineQueue.getPending();
+  } catch (error) {
+    console.error('Impossible de vérifier la file hors ligne après la synchronisation forcée:', error);
+    throw error;
+  }
+
+  const remaining = remainingItems.length;
+  const drained = Math.max(0, initialCount - remaining);
+
+  if (remaining > 0) {
+    const syncError = new Error(`Synchronisation hors ligne incomplète: ${remaining} élément(s) restant(s).`);
+    syncError.code = 'OFFLINE_SYNC_INCOMPLETE';
+    syncError.remaining = remaining;
+    syncError.drained = drained;
+    throw syncError;
+  }
+
+  return {
+    success: true,
+    drained,
+    remaining: 0,
+    attempted: Boolean(watcherResult?.attempted),
+  };
 });
 
 // Ouverture de liens externes dans le navigateur par défaut
