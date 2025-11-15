@@ -727,6 +727,17 @@ function App() {
       if (window.electronAPI && window.electronAPI.authenticateUser) {
         const result = await window.electronAPI.authenticateUser(credentials);
         if (result.success) {
+          if (window.electronAPI?.forceConnectionCheck) {
+            try {
+              const forcedSyncResult = await window.electronAPI.forceConnectionCheck();
+              if (!forcedSyncResult?.success) {
+                console.warn('Synchronisation hors ligne immédiate après connexion incomplète:', forcedSyncResult);
+              }
+            } catch (syncError) {
+              console.error('Erreur lors de la synchronisation hors ligne après connexion:', syncError);
+            }
+          }
+
           setIsAuthenticated(true);
           setFreelanceInfo(result.freelanceInfo);
           return true;
