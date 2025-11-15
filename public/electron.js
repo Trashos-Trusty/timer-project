@@ -223,6 +223,97 @@ async function attemptOfflineSync({ skipConnectivityCheck = false } = {}) {
   }
 }
 
+async function forceImmediateOfflineSync({ skipConnectivityCheck = false } = {}) {
+  if (!apiManager || !configManager) {
+    return {
+      success: false,
+      error: 'Gestionnaires API non disponibles',
+    };
+  }
+
+  if (!configManager.isApiConfigured()) {
+    return {
+      success: false,
+      error: 'API non configurée',
+    };
+  }
+
+  if (isDrainingOfflineQueue) {
+    console.log('Synchronisation hors ligne déjà en cours, aucun déclenchement supplémentaire.');
+    return {
+      success: true,
+      draining: true,
+      message: 'Synchronisation déjà en cours',
+    };
+  }
+
+  let pendingBefore = [];
+  try {
+    pendingBefore = await offlineQueue.getPending();
+  } catch (error) {
+    console.error('Impossible de récupérer la file hors ligne avant la synchronisation forcée:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+
+  const initialCount = pendingBefore.length;
+
+  if (initialCount === 0) {
+    return {
+      success: true,
+      drained: 0,
+      remaining: 0,
+      message: 'Aucune donnée hors ligne à synchroniser',
+    };
+  }
+
+  try {
+    await attemptOfflineSync({ skipConnectivityCheck });
+  } catch (error) {
+    console.error('Erreur inattendue lors de la synchronisation forcée:', error);
+    return {
+      success: false,
+      error: error.message,
+      drained: 0,
+      remaining: initialCount,
+    };
+  }
+
+  try {
+    const pendingAfter = await offlineQueue.getPending();
+    const remaining = pendingAfter.length;
+    const drained = Math.max(0, initialCount - remaining);
+
+    if (remaining === 0) {
+      console.log(`Synchronisation hors ligne forcée terminée: ${drained} élément(s) traité(s).`);
+      return {
+        success: true,
+        drained,
+        remaining,
+      };
+    }
+
+    const warningMessage = `Synchronisation hors ligne incomplète: ${remaining} élément(s) restant(s).`;
+    console.warn(warningMessage);
+    return {
+      success: false,
+      error: warningMessage,
+      drained,
+      remaining,
+    };
+  } catch (error) {
+    console.error('Impossible de vérifier la file hors ligne après la synchronisation forcée:', error);
+    return {
+      success: false,
+      error: error.message,
+      drained: null,
+      remaining: null,
+    };
+  }
+}
+
 function startNetworkWatcher() {
   if (networkMonitorInterval) {
     return;
@@ -612,6 +703,19 @@ ipcMain.handle('show-message-box', async (event, options) => {
   const { dialog } = require('electron');
   const result = await dialog.showMessageBox(mainWindow, options);
   return result;
+});
+
+ipcMain.handle('force-connection-check', async (_event, options = {}) => {
+  try {
+    const result = await forceImmediateOfflineSync(options);
+    return result;
+  } catch (error) {
+    console.error('Erreur lors de la synchronisation forcée via IPC:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
 });
 
 // Ouverture de liens externes dans le navigateur par défaut
