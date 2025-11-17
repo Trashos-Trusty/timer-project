@@ -62,6 +62,7 @@ let configManager;
 let apiManager;
 let updateManager;
 let lastMiniTimerSnapshot = null;
+let appCloseNotified = false;
 
 const NETWORK_PING_INTERVAL = 60 * 1000;
 let networkMonitorInterval = null;
@@ -111,6 +112,15 @@ function broadcastOfflineStatus(payload) {
   if (payload && payload.status) {
     broadcastOfflineSyncEvent(payload.status, payload);
   }
+}
+
+function notifyAppClose() {
+  if (appCloseNotified) {
+    return;
+  }
+
+  appCloseNotified = true;
+  broadcastToAll('app-close');
 }
 
 function isNetworkError(error) {
@@ -498,6 +508,10 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.on('close', () => {
+    notifyAppClose();
+  });
 }
 
 // Menu de l'application
@@ -606,6 +620,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', async () => {
+  notifyAppClose();
+
   // Nettoyer les ressources API
   if (apiManager) {
     await apiManager.cleanup();
@@ -632,6 +648,8 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  notifyAppClose();
+
   if (networkMonitorInterval) {
     clearInterval(networkMonitorInterval);
     networkMonitorInterval = null;

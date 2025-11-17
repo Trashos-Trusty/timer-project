@@ -40,6 +40,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('connection-status-changed', callback);
   },
 
+  // Événement de fermeture de l'application
+  onAppClose: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('app-close', handler);
+    return () => ipcRenderer.removeListener('app-close', handler);
+  },
+
   onOfflineSyncStatus: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('offline-sync-status', handler);
