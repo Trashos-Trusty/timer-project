@@ -1742,6 +1742,7 @@ const TimerComponent = forwardRef((
   // Sauvegarde automatique périodique + gestion fermeture
   useEffect(() => {
     let autoSaveInterval;
+    let removeAppCloseListener;
     
     // Sauvegarde automatique toutes les 30 secondes si le timer est actif
     if (selectedProject && isRunning && currentSessionStart) {
@@ -1818,7 +1819,7 @@ const TimerComponent = forwardRef((
 
     // Ajouter les listeners
     if (window.electronAPI && window.electronAPI.onAppClose) {
-      window.electronAPI.onAppClose(handleAppClose);
+      removeAppCloseListener = window.electronAPI.onAppClose(handleAppClose);
     }
     
     window.addEventListener('unload', handleWindowClose);
@@ -1828,6 +1829,9 @@ const TimerComponent = forwardRef((
     return () => {
       if (autoSaveInterval) {
         clearInterval(autoSaveInterval);
+      }
+      if (removeAppCloseListener) {
+        removeAppCloseListener();
       }
       window.removeEventListener('unload', handleWindowClose);
       window.removeEventListener('pagehide', handleWindowClose);
