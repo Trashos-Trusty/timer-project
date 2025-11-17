@@ -321,6 +321,20 @@ function startNetworkWatcher() {
     });
 }
 
+function stopNetworkWatcher() {
+  if (networkMonitorInterval) {
+    clearInterval(networkMonitorInterval);
+    networkMonitorInterval = null;
+  }
+}
+
+function destroyMiniWindow() {
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    miniWindow.destroy();
+    miniWindow = null;
+  }
+}
+
 function createMiniWindow() {
   if (miniWindow && !miniWindow.isDestroyed()) {
     return miniWindow;
@@ -511,6 +525,8 @@ function createWindow() {
 
   mainWindow.on('close', () => {
     notifyAppClose();
+    destroyMiniWindow();
+    stopNetworkWatcher();
   });
 }
 
@@ -627,14 +643,8 @@ app.on('window-all-closed', async () => {
     await apiManager.cleanup();
   }
 
-  if (networkMonitorInterval) {
-    clearInterval(networkMonitorInterval);
-    networkMonitorInterval = null;
-  }
-
-  if (miniWindow && !miniWindow.isDestroyed()) {
-    miniWindow.destroy();
-  }
+  stopNetworkWatcher();
+  destroyMiniWindow();
 
   if (process.platform !== 'darwin') {
     app.quit();
@@ -650,10 +660,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   notifyAppClose();
 
-  if (networkMonitorInterval) {
-    clearInterval(networkMonitorInterval);
-    networkMonitorInterval = null;
-  }
+  stopNetworkWatcher();
+  destroyMiniWindow();
 });
 
 // IPC handlers pour la communication avec le renderer
