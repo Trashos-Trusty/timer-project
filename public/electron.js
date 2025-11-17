@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor, dialog } = require('electron');
 const path = require('path');
 const log = require('electron-log/main');
 
@@ -559,6 +559,17 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+N',
           click: () => {
             mainWindow.webContents.send('menu-new-project');
+          }
+        },
+        {
+          label: 'Infos',
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'Informations',
+              message: 'Créateur : Enguerran Chaulier',
+              detail: 'Société : TrustyStudio.fr\nApplication Timer - Tous droits réservés.'
+            });
           }
         },
         { type: 'separator' },
