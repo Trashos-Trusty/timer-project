@@ -1739,11 +1739,121 @@ const TimerComponent = forwardRef((
     [saveCurrentSession, handlePause, handleStop, handleStart]
   );
 
+  const buildClosureSnapshot = useCallback(() => {
+    if (!selectedProject || !hasPendingSession) {
+      return null;
+    }
+
+    const now = Date.now();
+    const runningElapsed = isRunning && currentSessionStart
+      ? Math.floor((now - currentSessionStart) / 1000)
+      : 0;
+    const accumulatedSeconds = accumulatedSessionTimeRef.current || 0;
+    const pendingDuration = accumulatedSeconds + runningElapsed;
+
+    if (pendingDuration <= 0) {
+      return null;
+    }
+
+    const effectiveSubject = (currentSubject && currentSubject.trim()) || activeSessionSubjectRef.current || '';
+    const fallbackStart = now - pendingDuration * 1000;
+    const startTimestamp = currentSessionStart
+      || sessionStartTime
+      || lastSessionEndTime
+      || fallbackStart;
+
+    return {
+      projectId: selectedProject.id,
+      projectName: selectedProject.name,
+      durationSeconds: pendingDuration,
+      subject: effectiveSubject,
+      startTime: new Date(startTimestamp).toISOString(),
+      endTime: new Date(now).toISOString(),
+      totalTimeSeconds: baseProjectTimeRef.current + pendingDuration,
+    };
+  }, [
+    accumulatedSessionTimeRef,
+    activeSessionSubjectRef,
+    baseProjectTimeRef,
+    currentSessionStart,
+    currentSubject,
+    hasPendingSession,
+    isRunning,
+    lastSessionEndTime,
+    selectedProject,
+    sessionStartTime,
+  ]);
+
+  const sendSnapshotBeacon = useCallback((snapshot) => {
+    if (!snapshot || typeof navigator === 'undefined' || !navigator.sendBeacon) {
+      return false;
+    }
+
+    try {
+      const beaconPayload = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
+      const beaconSent = navigator.sendBeacon('/api/timer-snapshot', beaconPayload);
+
+      if (beaconSent) {
+        console.log('✅ Snapshot envoyé via sendBeacon');
+      }
+
+      return beaconSent;
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'envoi du snapshot via sendBeacon:', error);
+      return false;
+    }
+  }, []);
+
+  const persistClosureSnapshot = useCallback(async () => {
+    const snapshot = buildClosureSnapshot();
+
+    if (!snapshot) {
+      return;
+    }
+
+    const beaconSent = sendSnapshotBeacon(snapshot);
+
+    if (beaconSent) {
+      return;
+    }
+
+    if (!selectedProject) {
+      return;
+    }
+
+    try {
+      const sessionSubject = snapshot.subject || 'Travail général';
+      const newSession = {
+        id: `session-${Date.now()}`,
+        subject: sessionSubject,
+        startTime: snapshot.startTime,
+        endTime: snapshot.endTime,
+        duration: snapshot.durationSeconds,
+        date: snapshot.endTime.split('T')[0],
+      };
+
+      const projectData = {
+        ...selectedProject,
+        currentTime: snapshot.totalTimeSeconds,
+        status: 'stopped',
+        currentSubject: sessionSubject,
+        sessionStartTime: null,
+        workSessions: [...workSessions, newSession],
+        accumulatedSessionTime: 0,
+        lastSaved: Date.now(),
+      };
+
+      await persistProject(projectData);
+    } catch (error) {
+      console.error('❌ Erreur lors de la sauvegarde de secours à la fermeture:', error);
+    }
+  }, [buildClosureSnapshot, persistProject, selectedProject, sendSnapshotBeacon, workSessions]);
+
   // Sauvegarde automatique périodique + gestion fermeture
   useEffect(() => {
     let autoSaveInterval;
     let removeAppCloseListener;
-    
+
     // Sauvegarde automatique toutes les 30 secondes si le timer est actif
     if (selectedProject && isRunning && currentSessionStart) {
       autoSaveInterval = setInterval(async () => {
@@ -1764,7 +1874,7 @@ const TimerComponent = forwardRef((
             accumulatedSessionTime: totalSessionTime,
             lastSaved: Date.now()
           };
-          
+
           await persistProject(updatedProject);
           setLastAutoSave(new Date());
           console.log('✅ Sauvegarde auto périodique réussie');
@@ -1776,55 +1886,32 @@ const TimerComponent = forwardRef((
 
     // Gestionnaire de fermeture pour Electron
     const handleAppClose = async () => {
-      if (selectedProject && isRunning && currentSessionStart) {
-        console.log('🚨 Fermeture de l\'application détectée');
-        await saveCurrentSession(true);
+      if (!selectedProject || !hasPendingSession) {
+        return;
       }
+
+      console.log('🚨 Fermeture de l\'application détectée');
+      await persistClosureSnapshot();
     };
 
     // Gestionnaire pour fermeture navigateur standard
     const handleWindowClose = () => {
-      if (selectedProject && isRunning && currentSessionStart) {
-        console.log('🚨 Fermeture fenêtre détectée');
-        // Utiliser navigator.sendBeacon pour une sauvegarde fiable
-        const sessionEnd = Date.now();
-        const currentSegmentDuration = Math.floor((sessionEnd - currentSessionStart) / 1000);
-        const totalSessionTime = accumulatedSessionTime + currentSegmentDuration;
-        const finalTotalTime = baseProjectTime + totalSessionTime;
-
-        const projectData = {
-          ...selectedProject,
-          currentTime: finalTotalTime,
-          status: 'stopped',
-          currentSubject: currentSubject,
-          sessionStartTime: null,
-          workSessions: [...workSessions, {
-            id: `session-${Date.now()}`,
-            subject: currentSubject,
-            startTime: new Date(currentSessionStart || sessionStartTime).toISOString(),
-            endTime: new Date(sessionEnd).toISOString(),
-            duration: totalSessionTime,
-            date: new Date().toISOString().split('T')[0]
-          }],
-          accumulatedSessionTime: 0,
-          lastSaved: Date.now()
-        };
-        
-        // Tentative de sauvegarde rapide
-        persistProject(projectData).catch((error) => {
-          console.error('❌ Erreur sauvegarde fermeture:', error);
-        });
+      if (!selectedProject || !hasPendingSession) {
+        return;
       }
+
+      console.log('🚨 Fermeture fenêtre détectée');
+      void persistClosureSnapshot();
     };
 
     // Ajouter les listeners
     if (window.electronAPI && window.electronAPI.onAppClose) {
       removeAppCloseListener = window.electronAPI.onAppClose(handleAppClose);
     }
-    
+
     window.addEventListener('unload', handleWindowClose);
     window.addEventListener('pagehide', handleWindowClose);
-    
+
     // Cleanup
     return () => {
       if (autoSaveInterval) {
@@ -1836,7 +1923,21 @@ const TimerComponent = forwardRef((
       window.removeEventListener('unload', handleWindowClose);
       window.removeEventListener('pagehide', handleWindowClose);
     };
-  }, [selectedProject, isRunning, currentSessionStart, currentTime, currentSubject, sessionStartTime, subjectHistory, workSessions, saveCurrentSession, baseProjectTime, accumulatedSessionTime, persistProject]);
+  }, [
+    selectedProject,
+    isRunning,
+    currentSessionStart,
+    currentTime,
+    currentSubject,
+    sessionStartTime,
+    subjectHistory,
+    workSessions,
+    persistClosureSnapshot,
+    baseProjectTime,
+    accumulatedSessionTime,
+    persistProject,
+    hasPendingSession
+  ]);
 
   const handleMiniTimerToggle = useCallback(() => {
     if (!canShowMiniTimer) {
