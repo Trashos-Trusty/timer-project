@@ -14,6 +14,7 @@ const UpdateManager = () => {
   const [notification, setNotification] = useState({ type: '', message: '', details: '' });
   const [pendingUpdateCount, setPendingUpdateCount] = useState(0);
   const notificationTimeoutRef = useRef(null);
+  const manualCheckTimeoutRef = useRef(null);
 
   const resolvePendingUpdateCount = (info) => {
     if (info) {
@@ -58,6 +59,7 @@ const UpdateManager = () => {
     if (window.electronAPI.onUpdateAvailable) {
       cleanupFunctions.push(window.electronAPI.onUpdateAvailable((_, info) => {
         console.log('✅ Mise à jour disponible:', info);
+        clearManualCheckTimeout();
         setUpdateStatus(prev => ({
           ...prev,
           isCheckingForUpdate: false,
@@ -75,6 +77,7 @@ const UpdateManager = () => {
     if (window.electronAPI.onUpdateNotAvailable) {
       cleanupFunctions.push(window.electronAPI.onUpdateNotAvailable(() => {
         console.log('ℹ️ Aucune mise à jour disponible');
+        clearManualCheckTimeout();
         setUpdateStatus(prev => ({
           ...prev,
           isCheckingForUpdate: false,
@@ -92,6 +95,7 @@ const UpdateManager = () => {
     if (window.electronAPI.onUpdateDownloaded) {
       cleanupFunctions.push(window.electronAPI.onUpdateDownloaded((_, info) => {
         console.log('⬇️ Mise à jour téléchargée:', info);
+        clearManualCheckTimeout();
         setUpdateStatus(prev => ({ ...prev, isUpdateDownloaded: true }));
         setDownloadProgress(null);
         setPendingUpdateCount(prev => (prev > 0 ? prev : resolvePendingUpdateCount(info)));
@@ -116,6 +120,7 @@ const UpdateManager = () => {
     if (window.electronAPI.onUpdateError) {
       cleanupFunctions.push(window.electronAPI.onUpdateError((_, error) => {
         console.error('❌ Erreur de mise à jour:', error);
+        clearManualCheckTimeout();
         setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
         setDownloadProgress(null);
         setPendingUpdateCount(0);
@@ -188,8 +193,19 @@ const UpdateManager = () => {
       if (notificationTimeoutRef.current) {
         clearTimeout(notificationTimeoutRef.current);
       }
+
+      if (manualCheckTimeoutRef.current) {
+        clearTimeout(manualCheckTimeoutRef.current);
+      }
     };
   }, []);
+
+  const clearManualCheckTimeout = () => {
+    if (manualCheckTimeoutRef.current) {
+      clearTimeout(manualCheckTimeoutRef.current);
+      manualCheckTimeoutRef.current = null;
+    }
+  };
 
   const showNotification = (type, message, details) => {
     setNotification({ type, message, details });
@@ -207,11 +223,27 @@ const UpdateManager = () => {
       showNotification('info', 'Vérification des mises à jour', 'Fonctionnalité pas encore implémentée');
       return;
     }
-    
+
     try {
+      clearManualCheckTimeout();
       setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: true }));
       await window.electronAPI.checkForUpdates();
       showNotification('info', 'Vérification en cours...', '');
+
+      manualCheckTimeoutRef.current = setTimeout(() => {
+        setUpdateStatus(prev => ({
+          ...prev,
+          isCheckingForUpdate: false,
+          isUpdateAvailable: false,
+          isUpdateDownloaded: false,
+          updateInfo: null
+        }));
+        setShowUpdateNotification(false);
+        setPendingUpdateCount(0);
+        setDownloadProgress(null);
+        showNotification('info', 'Aucune mise à jour disponible', 'Vous avez déjà la dernière version');
+        manualCheckTimeoutRef.current = null;
+      }, 15000);
     } catch (error) {
       setUpdateStatus(prev => ({ ...prev, isCheckingForUpdate: false }));
       showNotification('error', 'Erreur', error.message);
