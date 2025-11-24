@@ -75,11 +75,11 @@ const MiniTimerOverlay = ({
         } transition-all duration-200 ${
           isCollapsed
             ? isCompact
-              ? 'px-4 py-3 w-[220px]'
-              : 'px-5 py-4 w-[220px]'
+              ? 'px-3.5 py-3 w-[190px]'
+              : 'px-4 py-3.5 w-[200px]'
             : isCompact
-              ? 'px-4 py-3 w-[250px]'
-              : 'px-6 py-5 w-[260px]'
+              ? 'px-3.5 py-3 w-[220px]'
+              : 'px-5 py-4 w-[230px]'
         }`;
 
   const handlePointerMove = useCallback(
