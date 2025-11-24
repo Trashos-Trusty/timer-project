@@ -341,8 +341,8 @@ function createMiniWindow() {
   }
 
   miniWindow = new BrowserWindow({
-    width: 320,
-    height: 160,
+    width: 280,
+    height: 150,
     resizable: false,
     maximizable: false,
     minimizable: false,
