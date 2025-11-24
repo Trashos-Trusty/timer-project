@@ -67,8 +67,8 @@ const MiniTimerOverlay = ({
   const panelClasses = panelClassName
     ? panelClassName
     : isWindowVariant
-      ? `relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-[24px] border border-primary-100/60 bg-white/95 px-3 shadow-xl transition-all duration-200 ${
-          isCollapsed ? 'min-h-[176px] py-2.5' : 'min-h-[192px] py-3.5'
+      ? `relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-2xl border border-primary-100/60 bg-white/95 px-2.5 py-2 shadow-lg transition-all duration-200 ${
+          isCollapsed ? 'min-h-[136px]' : 'min-h-[148px]'
         }`
       : `relative overflow-hidden backdrop-blur bg-white/95 shadow-xl border border-primary-100/60 ${
           isCompact ? 'rounded-2xl' : 'rounded-[32px]'
@@ -280,7 +280,7 @@ const MiniTimerOverlay = ({
 
   const circleSize = (() => {
     if (isWindowVariant) {
-      return isCollapsed ? 108 : 124;
+      return isCollapsed ? 96 : 110;
     }
 
     if (!isCompact) {
@@ -320,7 +320,7 @@ const MiniTimerOverlay = ({
   const showPauseButton = canPause || canResume;
   const showStopButton = typeof onStop === 'function';
   const contentClasses = isWindowVariant
-    ? 'flex h-full w-full flex-col items-center justify-start gap-1.5 pt-1.5 pb-2'
+    ? 'flex h-full w-full flex-col items-center justify-start gap-1 pt-1 pb-1.5'
     : `flex flex-col items-center ${isCompact ? 'gap-2.5' : 'gap-4'}`;
   const headerGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-2' : 'gap-3';
   const projectInfoGapClass = isWindowVariant ? 'gap-0.5' : isCompact ? 'gap-1.5' : 'gap-2';
@@ -331,7 +331,7 @@ const MiniTimerOverlay = ({
   const expandButtonPositionClass = isCompact ? 'absolute top-2.5 right-2.5' : 'absolute top-3 right-3';
   const expandButtonSizeClass = isWindowVariant ? 'h-5 w-5' : isCompact ? 'h-7 w-7' : 'h-8 w-8';
   const expandIconSizeClass = isWindowVariant ? 'h-2.5 w-2.5' : isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4';
-  const circleContentPaddingClass = isWindowVariant ? 'px-3' : isCompact ? 'px-4' : 'px-6';
+  const circleContentPaddingClass = isWindowVariant ? 'px-2.5' : isCompact ? 'px-4' : 'px-6';
   const circleLabelClass = isWindowVariant ? 'text-[8.5px] tracking-[0.18em]' : isCompact ? 'text-[10px] tracking-[0.18em]' : 'text-[11px] tracking-[0.25em]';
   const timerValueClass = isWindowVariant ? 'text-base' : isCompact ? 'text-xl' : 'text-2xl';
   const subjectTextClass = isWindowVariant ? 'mt-0.5 text-[10px] leading-tight' : isCompact ? 'mt-1 text-xs leading-snug' : 'mt-2 text-sm leading-tight';
