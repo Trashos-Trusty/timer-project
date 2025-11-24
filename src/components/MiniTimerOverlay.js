@@ -67,7 +67,7 @@ const MiniTimerOverlay = ({
   const panelClasses = panelClassName
     ? panelClassName
       : isWindowVariant
-        ? `relative flex h-full w-full flex-col items-center justify-between overflow-hidden rounded-2xl border border-primary-100/60 bg-white/95 px-0 py-2 shadow-lg transition-all duration-200 ${
+        ? `relative flex h-full max-w-[170px] flex-col items-center justify-between overflow-hidden rounded-2xl border border-primary-100/60 bg-white/95 px-1.5 py-2 shadow-lg transition-all duration-200 ${
             isCollapsed ? 'min-h-[136px]' : 'min-h-[148px]'
           }`
       : `relative overflow-hidden backdrop-blur bg-white/95 shadow-xl border border-primary-100/60 ${
