@@ -85,6 +85,13 @@ class UpdateManager {
         return;
       }
       
+      // Gestion spécifique des indisponibilités GitHub (ex: 503 Unicorn)
+      if (this.isServiceUnavailableError(error)) {
+        console.log('🦄 GitHub temporairement indisponible, nouvelle tentative ultérieure.');
+        this.sendToRenderer('update-not-available', { reason: 'service-unavailable' });
+        return;
+      }
+
       // Vérifier si c'est une "erreur" normale (pas de releases sur GitHub)
       const normalErrors = [
         'No published version on Github',
@@ -93,14 +100,14 @@ class UpdateManager {
         'net::ERR_INTERNET_DISCONNECTED',
         'net::ERR_NAME_NOT_RESOLVED'
       ];
-      
+
       const errorMessage = error.message || error.toString() || '';
-      const isNormalError = normalErrors.some(normalError => 
+      const isNormalError = normalErrors.some(normalError =>
         errorMessage.includes(normalError)
       );
-      
+
       console.log('🔍 Vérification erreur normale:', isNormalError, 'pour message:', errorMessage);
-      
+
       if (isNormalError) {
         console.log('ℹ️ Aucune mise à jour disponible sur GitHub - suppression des futures vérifications');
         this.hasNoReleasesOnGithub = true; // Marquer qu'il n'y a pas de releases
@@ -256,13 +263,19 @@ class UpdateManager {
 
   showUpdateErrorDialog(error) {
     console.log('🚨 showUpdateErrorDialog appelée avec:', error.message || error.toString());
-    
+
     // Si les popups sont supprimés, ne rien afficher
     if (this.suppressAllPopups) {
       console.log('🔇 showUpdateErrorDialog: Popup supprimé');
       return;
     }
-    
+
+    // Erreurs temporaires (ex: 503 GitHub Unicorn) : on log seulement pour réessayer plus tard
+    if (this.isServiceUnavailableError(error)) {
+      console.log('🦄 showUpdateErrorDialog: GitHub temporairement indisponible, aucun popup affiché');
+      return;
+    }
+
     // Ne pas afficher de popup pour certaines "erreurs" normales
     const normalErrors = [
       'No published version on Github',
@@ -290,7 +303,7 @@ class UpdateManager {
     }
     
     console.log('🚨 showUpdateErrorDialog: Affichage du popup pour vraie erreur:', errorMessage);
-    
+
     // Afficher la popup pour les vraies erreurs techniques
     const options = {
       type: 'error',
@@ -301,6 +314,14 @@ class UpdateManager {
     };
 
     dialog.showMessageBox(this.mainWindow, options);
+  }
+
+  isServiceUnavailableError(error) {
+    const errorMessage = (error?.message || error?.toString() || '').toLowerCase();
+    return errorMessage.includes('503') ||
+      errorMessage.includes('service unavailable') ||
+      errorMessage.includes('unicorn') ||
+      errorMessage.includes('unable to find latest version on github');
   }
 
   sendToRenderer(channel, data = null) {
