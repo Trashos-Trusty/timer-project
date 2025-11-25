@@ -924,7 +924,12 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       projectId: projectData.id,
       projectName: projectData.name,
       originalName: originalName,
-      hasOriginalName: !!originalName
+      hasOriginalName: !!originalName,
+      tokenPresent: Boolean(apiManager?.config?.token),
+      tokenPreview: apiManager?.config?.token
+        ? `${apiManager.config.token.slice(0, 8)}...${apiManager.config.token.slice(-8)}`
+        : 'none',
+      freelanceId: apiManager?.config?.freelanceId ?? null,
     });
 
     const savedProject = await apiManager.saveProject(projectData, originalName);
