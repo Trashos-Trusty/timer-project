@@ -372,8 +372,23 @@ class ApiManager {
       });
 
       if (response.success) {
-        console.log('✅ Projet sauvegardé avec succès');
-        return response.data;
+        const payload = response.data?.project || response.data || response;
+        const normalizedProject = {
+          ...project,
+          id: payload.project_uuid || payload.id || project.id,
+          projectId: payload.project_id || payload.id || project.projectId,
+          currentTime: payload.currentTime ?? payload.current_time ?? project.currentTime ?? 0,
+          status: payload.status ?? project.status ?? 'active'
+        };
+
+        console.log('✅ Projet sauvegardé avec succès', {
+          returnedProjectId: normalizedProject.id,
+          projectId: normalizedProject.projectId,
+          status: normalizedProject.status
+        });
+        console.log('🧪 Vérification retour saveProject:', normalizedProject ? 'OK' : 'NUL');
+
+        return normalizedProject;
       } else {
         throw new Error(response.message || 'Erreur lors de la sauvegarde');
       }
@@ -581,4 +596,4 @@ class ApiManager {
   }
 }
 
-module.exports = ApiManager; 
+module.exports = ApiManager;
