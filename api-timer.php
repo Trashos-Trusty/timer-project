@@ -282,8 +282,8 @@ if ($action === 'projects' && $method === 'GET') {
     exit();
 }
 
-// SAUVEGARDE PROJET - STRUCTURE CORRECTE
-if ($action === 'projects' && $method === 'POST') {
+// SAUVEGARDE PROJET - STRUCTURE CORRECTE (compatibilité save-project)
+if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
     $projectData = json_decode($rawInput, true);
     
