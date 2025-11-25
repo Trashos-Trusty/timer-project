@@ -911,6 +911,8 @@ function App() {
 
       if (result?.error) {
         const error = new Error(result.error.message || "La sauvegarde du projet a échoué.");
+        error.status = result.error.status ?? null;
+        error.statusText = result.error.statusText ?? null;
         error.details = result.error.details || null;
         throw error;
       }
@@ -939,7 +941,18 @@ function App() {
         throw markSessionExpiredError(error);
       }
 
-      throw error instanceof Error ? error : new Error(String(error || 'Erreur inconnue lors de la sauvegarde du projet.'));
+      if (error instanceof Error) {
+        throw error;
+      }
+
+      const normalizedError = new Error(String(error || 'Erreur inconnue lors de la sauvegarde du projet.'));
+      if (error && typeof error === 'object') {
+        normalizedError.status = error.status ?? error.statusCode ?? null;
+        normalizedError.statusText = error.statusText ?? error.statusMessage ?? null;
+        normalizedError.details = error.details ?? error.data?.details ?? null;
+      }
+
+      throw normalizedError;
     } finally {
       // S'assurer que isSaving est remis à false dans tous les cas
       setIsSaving(false);

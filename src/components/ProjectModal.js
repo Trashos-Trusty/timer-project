@@ -91,20 +91,35 @@ const ProjectModal = ({ project, onSave, onClose }) => {
       });
       
       await onSave(projectData);
-      
+
       // Fermer la modal seulement si la sauvegarde a réussi
       console.log('✅ Sauvegarde réussie, fermeture de la modal');
-      
+
       // Nettoyer les états avant fermeture
       setErrors({});
-      
+
       // Fermer la modal
       onClose();
-      
+
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
       // Afficher l'erreur à l'utilisateur mais ne pas fermer la modal
-      alert(`Erreur lors de la sauvegarde: ${error.message}`);
+      const statusInfo = [
+        error?.status ? `statut ${error.status}` : null,
+        error?.statusText ? `${error.statusText}` : null
+      ].filter(Boolean).join(' - ');
+
+      const details = error?.details
+        ? (typeof error.details === 'string' ? error.details : JSON.stringify(error.details, null, 2))
+        : null;
+
+      const alertMessage = [
+        `Erreur lors de la sauvegarde: ${error.message}`,
+        statusInfo ? `Informations de statut: ${statusInfo}` : null,
+        details ? `Détails supplémentaires: ${details}` : null
+      ].filter(Boolean).join('\n');
+
+      alert(alertMessage);
     } finally {
       setIsLoading(false);
     }
