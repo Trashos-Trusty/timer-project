@@ -982,7 +982,18 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
     }
 
     console.error('Erreur lors de la sauvegarde:', error);
-    throw error;
+    const status = error?.status ?? error?.statusCode ?? error?.response?.status ?? null;
+    const statusText = error?.statusText ?? error?.statusMessage ?? error?.response?.statusText ?? null;
+    const details = error?.details ?? error?.response?.data?.details ?? error?.data?.details ?? null;
+
+    const enrichedError = new Error(error?.message || 'Erreur lors de la sauvegarde du projet.');
+    Object.assign(enrichedError, error, {
+      status,
+      statusText,
+      details,
+    });
+
+    throw enrichedError;
   }
 });
 
