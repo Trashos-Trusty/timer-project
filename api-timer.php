@@ -362,30 +362,47 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
 
         // ÉTAPE 1: Créer ou récupérer un client avec DEBUG
         $clientName = $projectData['clientName'] ?? $projectData['client'] ?? 'Client par défaut';
-        
+
+        // Vérifier dynamiquement si la colonne client_id existe (schema OVH historique)
+        $clientColumnsStmt = $pdo->query("SHOW COLUMNS FROM clients");
+        $clientColumns = $clientColumnsStmt->fetchAll(PDO::FETCH_COLUMN);
+        $hasClientSlugColumn = in_array('client_id', $clientColumns);
+
         // Debug: afficher les données reçues
         error_log("DEBUG CLIENT - Données reçues: " . json_encode($projectData));
         error_log("DEBUG CLIENT - Nom client extrait: " . $clientName);
         error_log("DEBUG CLIENT - Freelance ID: " . $freelanceId);
-        
+        error_log("DEBUG CLIENT - Colonne client_id présente: " . ($hasClientSlugColumn ? 'OUI' : 'NON'));
+
         // Chercher un client existant
         $stmt = $pdo->prepare('SELECT id FROM clients WHERE freelance_id = ? AND name = ?');
         $stmt->execute([$freelanceId, $clientName]);
         $client = $stmt->fetch();
         error_log("DEBUG CLIENT - Client existant trouvé: " . ($client ? "OUI (ID: " . $client['id'] . ")" : "NON"));
-        
+
         if (!$client) {
             // Créer un nouveau client
             $clientSlug = strtolower(str_replace(' ', '_', $clientName));
             error_log("DEBUG CLIENT - Création nouveau client: " . $clientName . " (slug: " . $clientSlug . ")");
-            
-            $stmt = $pdo->prepare('INSERT INTO clients (freelance_id, client_id, name, company) VALUES (?, ?, ?, ?)');
-            $stmt->execute([
-                $freelanceId,
-                $clientSlug,
-                $clientName,
-                $projectData['company'] ?? ''
-            ]);
+
+            if ($hasClientSlugColumn) {
+                $stmt = $pdo->prepare('INSERT INTO clients (freelance_id, client_id, name, company) VALUES (?, ?, ?, ?)');
+                $stmt->execute([
+                    $freelanceId,
+                    $clientSlug,
+                    $clientName,
+                    $projectData['company'] ?? ''
+                ]);
+            } else {
+                // Schéma sans colonne client_id
+                $stmt = $pdo->prepare('INSERT INTO clients (freelance_id, name, company) VALUES (?, ?, ?)');
+                $stmt->execute([
+                    $freelanceId,
+                    $clientName,
+                    $projectData['company'] ?? ''
+                ]);
+            }
+
             $clientId = $pdo->lastInsertId();
             error_log("DEBUG CLIENT - Client créé avec ID: " . $clientId);
         } else {
