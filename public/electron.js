@@ -919,6 +919,16 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
     });
 
     const savedProject = await apiManager.saveProject(projectData, originalName);
+
+    if (savedProject?.error) {
+      const { status, statusText, message, details } = savedProject.error;
+      const sanitizedError = new Error(message || 'Erreur lors de la sauvegarde du projet.');
+      sanitizedError.status = status || null;
+      sanitizedError.statusText = statusText || null;
+      sanitizedError.details = details || null;
+      throw sanitizedError;
+    }
+
     console.log('Projet sauvegardé via API:', savedProject?.name || projectData.name);
 
     try {
