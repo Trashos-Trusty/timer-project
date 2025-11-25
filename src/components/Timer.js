@@ -220,6 +220,11 @@ const TimerComponent = forwardRef((
 
     try {
       const result = await window.electronAPI.saveProject(projectData);
+      if (result?.error) {
+        const structuredError = new Error(result.error.message || "La sauvegarde du projet a échoué.");
+        structuredError.details = result.error.details || null;
+        throw structuredError;
+      }
       const isResultObject = result && typeof result === 'object';
       const isQueued = Boolean(isResultObject && result.queued);
       const baseProject = { ...projectData };
@@ -273,11 +278,13 @@ const TimerComponent = forwardRef((
     }
 
     const errorMessage = error?.message || "La sauvegarde du projet n'a pas abouti. Veuillez réessayer.";
+    const errorDetails = error?.details || null;
 
     notifyPersistenceError(error, context);
     setPersistenceError({
       message: errorMessage,
       context,
+      details: errorDetails,
     });
   }, [notifyPersistenceError, restoreTimerState]);
 
@@ -286,6 +293,44 @@ const TimerComponent = forwardRef((
       clearTimeout(inactivityTimeoutRef.current);
       inactivityTimeoutRef.current = null;
     }
+  }, []);
+
+  const renderPersistenceDetails = useCallback((details) => {
+    if (!details) {
+      return null;
+    }
+
+    const content = Array.isArray(details)
+      ? details
+      : typeof details === 'object'
+        ? Object.entries(details)
+        : null;
+
+    if (Array.isArray(content)) {
+      return (
+        <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+          {content.map((item, index) => (
+            <li key={index}>{typeof item === 'string' ? item : JSON.stringify(item)}</li>
+          ))}
+        </ul>
+      );
+    }
+
+    if (content && content.length) {
+      return (
+        <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+          {content.map(([key, value]) => (
+            <li key={key}>
+              <span className="font-medium">{key}:</span> {typeof value === 'string' ? value : JSON.stringify(value)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    return (
+      <p className="text-sm text-gray-700">{typeof details === 'string' ? details : JSON.stringify(details)}</p>
+    );
   }, []);
 
   const getSystemIdleSeconds = useCallback(async () => {
@@ -2790,18 +2835,24 @@ const TimerComponent = forwardRef((
       {persistenceError && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-            <div className="flex items-center mb-3">
-              <AlertTriangle className="w-5 h-5 text-danger-500 mr-2" />
-              <h3 className="text-lg font-semibold text-gray-900">Erreur de sauvegarde</h3>
+          <div className="flex items-center mb-3">
+            <AlertTriangle className="w-5 h-5 text-danger-500 mr-2" />
+            <h3 className="text-lg font-semibold text-gray-900">Erreur de sauvegarde</h3>
+          </div>
+          <p className="text-sm text-gray-700 mb-4">
+            {persistenceError.message || "La sauvegarde du projet a échoué. Veuillez réessayer."}
+          </p>
+          {persistenceError.details && (
+            <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Détails fournis par le serveur</p>
+              {renderPersistenceDetails(persistenceError.details)}
             </div>
-            <p className="text-sm text-gray-700 mb-4">
-              {persistenceError.message || "La sauvegarde du projet a échoué. Veuillez réessayer."}
-            </p>
-            <p className="text-xs text-gray-500 mb-6">
-              Le timer a été restauré à son état précédent en attendant la résolution de ce problème.
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
+          )}
+          <p className="text-xs text-gray-500 mb-6">
+            Le timer a été restauré à son état précédent en attendant la résolution de ce problème.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <button
                 type="button"
                 onClick={() => setPersistenceError(null)}
                 className="btn-primary"

@@ -366,10 +366,29 @@ class ApiManager {
         last_saved: new Date().toISOString()
       };
 
-      const response = await this.makeSecureRequest('projects', {
-        method: 'POST',
-        body: JSON.stringify(projectData)
-      });
+      let response;
+
+      try {
+        response = await this.makeSecureRequest('projects', {
+          method: 'POST',
+          body: JSON.stringify(projectData)
+        });
+      } catch (error) {
+        // Préserver les informations d'erreur de l'API pour l'IPC
+        const structuredError = {
+          status: error.status || error.statusCode || null,
+          statusText: error.statusText || null,
+          message: error.message || 'Erreur lors de la sauvegarde du projet',
+          details: error.responseBody || null
+        };
+
+        // Les erreurs réseau doivent remonter pour être gérées par le handler IPC (offline queue, etc.)
+        if (error.isNetworkError || (!structuredError.status && !structuredError.statusText)) {
+          throw error;
+        }
+
+        return { error: structuredError };
+      }
 
       if (response.success) {
         const payload = response.data?.project || response.data || response;
@@ -390,7 +409,14 @@ class ApiManager {
 
         return normalizedProject;
       } else {
-        throw new Error(response.message || 'Erreur lors de la sauvegarde');
+        return {
+          error: {
+            status: response.status || null,
+            statusText: response.statusText || null,
+            message: response.message || 'Erreur lors de la sauvegarde',
+            details: response.data || null,
+          }
+        };
       }
     }, 'saveProject');
   }
