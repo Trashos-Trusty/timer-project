@@ -6,6 +6,9 @@ import { isSessionExpiredError, markSessionExpiredError, SESSION_EXPIRED_MESSAGE
 const LARGE_SCREEN_BREAKPOINT = 768;
 const INACTIVITY_THRESHOLD_MS = 10 * 60 * 1000;
 const INACTIVITY_THRESHOLD_SECONDS = Math.floor(INACTIVITY_THRESHOLD_MS / 1000);
+const SYNC_MAX_CONSECUTIVE_ERRORS = 3;
+const SYNC_BASE_BACKOFF_MS = 5000;
+const SYNC_MAX_BACKOFF_MS = 60000;
 
 const TimerComponent = forwardRef((
   {
@@ -17,7 +20,9 @@ const TimerComponent = forwardRef((
     onToggleMiniTimer = () => {},
     isMiniTimerVisible = false,
     canShowMiniTimer = false,
-    onSessionExpired = () => {}
+    onSessionExpired = () => {},
+    onSyncStatusChange = () => {},
+    onPersistenceError = null
   },
   ref
 ) => {
@@ -58,6 +63,8 @@ const TimerComponent = forwardRef((
   const [showOvertimeModal, setShowOvertimeModal] = useState(false);
   const [hasAcknowledgedOvertime, setHasAcknowledgedOvertime] = useState(false);
   const [autoPausedForOvertime, setAutoPausedForOvertime] = useState(false);
+  const [syncRetryMeta, setSyncRetryMeta] = useState({ failureCount: 0, cooldownUntil: null });
+  const [persistenceError, setPersistenceError] = useState(null);
 
   const currentSessionElapsed = Math.max(0, currentTime - baseProjectTime);
   const hasPendingSession = Boolean(
@@ -83,6 +90,80 @@ const TimerComponent = forwardRef((
   const scheduleInactivityCheckRef = useRef(() => {});
   const lastInteractionRef = useRef(Date.now());
   const ignoreNextEnterRef = useRef(false);
+  const syncCooldownTimeoutRef = useRef(null);
+
+  const captureTimerState = useCallback(() => ({
+    isRunning: isRunningRef.current,
+    currentSessionStart,
+    sessionStartTime,
+    lastSessionEndTime,
+    currentTime,
+    baseProjectTime,
+    accumulatedSessionTime: accumulatedSessionTimeRef.current,
+    currentSubject,
+    activeSessionSubject: activeSessionSubjectRef.current || '',
+  }), [
+    accumulatedSessionTimeRef,
+    baseProjectTime,
+    currentSessionStart,
+    currentSubject,
+    currentTime,
+    isRunningRef,
+    lastSessionEndTime,
+    sessionStartTime,
+  ]);
+
+  const restoreTimerState = useCallback((snapshot) => {
+    if (!snapshot) {
+      return;
+    }
+
+    setIsRunning(Boolean(snapshot.isRunning));
+    setCurrentSessionStart(snapshot.currentSessionStart || null);
+    setSessionStartTime(snapshot.sessionStartTime || null);
+    setLastSessionEndTime(snapshot.lastSessionEndTime || null);
+    setCurrentTime(typeof snapshot.currentTime === 'number' ? snapshot.currentTime : 0);
+    setBaseProjectTime(typeof snapshot.baseProjectTime === 'number' ? snapshot.baseProjectTime : 0);
+    const restoredAccumulated = typeof snapshot.accumulatedSessionTime === 'number'
+      ? snapshot.accumulatedSessionTime
+      : 0;
+    setAccumulatedSessionTime(restoredAccumulated);
+    accumulatedSessionTimeRef.current = restoredAccumulated;
+    baseProjectTimeRef.current = typeof snapshot.baseProjectTime === 'number'
+      ? snapshot.baseProjectTime
+      : 0;
+
+    const restoredSubject = typeof snapshot.currentSubject === 'string' ? snapshot.currentSubject : '';
+    setCurrentSubject(restoredSubject);
+    activeSessionSubjectRef.current = snapshot.activeSessionSubject || '';
+  }, [accumulatedSessionTimeRef, baseProjectTimeRef]);
+
+  const notifyPersistenceError = useCallback((error, context = {}) => {
+    if (typeof onPersistenceError === 'function') {
+      try {
+        onPersistenceError(error, context);
+      } catch (callbackError) {
+        console.error('Erreur lors de la notification d\'une erreur de persistance:', callbackError);
+      }
+    }
+  }, [onPersistenceError]);
+
+  const notifySyncStatus = useCallback((status, payload = {}) => {
+    if (typeof onSyncStatusChange === 'function') {
+      try {
+        onSyncStatusChange({ status, ...payload });
+      } catch (callbackError) {
+        console.error('Erreur lors de la notification du statut de synchronisation:', callbackError);
+      }
+    }
+  }, [onSyncStatusChange]);
+
+  const clearSyncCooldownTimeout = useCallback(() => {
+    if (syncCooldownTimeoutRef.current) {
+      clearTimeout(syncCooldownTimeoutRef.current);
+      syncCooldownTimeoutRef.current = null;
+    }
+  }, []);
 
   // Fonction pour nettoyer complètement l'état du timer
   const cleanupTimer = useCallback(() => {
@@ -98,6 +179,36 @@ const TimerComponent = forwardRef((
     setCurrentSessionStart(null);
     setLastSessionEndTime(null);
   }, []);
+
+  const scheduleSyncCooldown = useCallback((delayMs, context = {}) => {
+    clearSyncCooldownTimeout();
+
+    const nextAttemptAt = Date.now() + delayMs;
+    setSyncRetryMeta((previous) => ({
+      ...previous,
+      cooldownUntil: nextAttemptAt,
+    }));
+
+    notifySyncStatus('cooldown', {
+      nextAttemptAt,
+      delayMs,
+      ...context,
+    });
+
+    syncCooldownTimeoutRef.current = setTimeout(() => {
+      setSyncRetryMeta((previous) => ({
+        ...previous,
+        cooldownUntil: null,
+      }));
+      notifySyncStatus('ready', { reason: 'backoff_elapsed' });
+    }, delayMs);
+  }, [clearSyncCooldownTimeout, notifySyncStatus]);
+
+  const resetSyncRetryState = useCallback((reason = 'user') => {
+    clearSyncCooldownTimeout();
+    setSyncRetryMeta({ failureCount: 0, cooldownUntil: null });
+    notifySyncStatus('reset', { reason });
+  }, [clearSyncCooldownTimeout, notifySyncStatus]);
 
   const persistProject = useCallback(async (projectData) => {
     if (!window?.electronAPI?.saveProject) {
@@ -151,6 +262,25 @@ const TimerComponent = forwardRef((
     }
   }, [onProjectUpdate, onSessionExpired]);
 
+  const handlePersistenceFailure = useCallback((error, context = {}, snapshot = null) => {
+    if (snapshot) {
+      restoreTimerState(snapshot);
+    }
+
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    const errorMessage = error?.message || "La sauvegarde du projet n'a pas abouti. Veuillez réessayer.";
+
+    notifyPersistenceError(error, context);
+    setPersistenceError({
+      message: errorMessage,
+      context,
+    });
+  }, [notifyPersistenceError, restoreTimerState]);
+
   const clearInactivityTimeout = useCallback(() => {
     if (inactivityTimeoutRef.current) {
       clearTimeout(inactivityTimeoutRef.current);
@@ -178,7 +308,9 @@ const TimerComponent = forwardRef((
     return fallbackIdle;
   }, []);
 
-  const startTimer = useCallback(async () => {
+  const startTimer = useCallback(async (previousState = null) => {
+    const snapshot = previousState || captureTimerState();
+
     try {
       setIsRunning(true);
 
@@ -205,8 +337,18 @@ const TimerComponent = forwardRef((
       await persistProject(updatedProject);
     } catch (error) {
       console.error('Erreur lors du démarrage:', error);
+      handlePersistenceFailure(error, { action: 'start', projectId: selectedProject?.id }, snapshot);
     }
-  }, [selectedProject, currentSubject, sessionStartTime, subjectHistory, workSessions, persistProject]);
+  }, [
+    selectedProject,
+    currentSubject,
+    sessionStartTime,
+    subjectHistory,
+    workSessions,
+    persistProject,
+    handlePersistenceFailure,
+    captureTimerState
+  ]);
 
   useEffect(() => {
     baseProjectTimeRef.current = baseProjectTime;
@@ -509,6 +651,12 @@ const TimerComponent = forwardRef((
     };
   }, [cleanupTimer]);
 
+  useEffect(() => {
+    return () => {
+      clearSyncCooldownTimeout();
+    };
+  }, [clearSyncCooldownTimeout]);
+
   // Nettoyer le timer quand on change de projet
   useEffect(() => {
     return () => {
@@ -522,6 +670,11 @@ const TimerComponent = forwardRef((
   const updateProjectTime = useCallback(async (totalTime, sessionTime = 0) => {
     if (!selectedProject) return;
 
+    const now = Date.now();
+    if (syncRetryMeta.cooldownUntil !== null && now < syncRetryMeta.cooldownUntil) {
+      return;
+    }
+
     try {
       const updatedProject = {
         ...selectedProject,
@@ -534,17 +687,89 @@ const TimerComponent = forwardRef((
       };
 
       await persistProject(updatedProject);
+      if (syncRetryMeta.failureCount > 0 || syncRetryMeta.cooldownUntil !== null) {
+        resetSyncRetryState('sync_success');
+        notifySyncStatus('success', { lastSuccessfulSave: now });
+      }
     } catch (error) {
       console.error('Erreur lors de la mise à jour du projet:', error);
+      const failureCount = syncRetryMeta.failureCount + 1;
+      const backoffDelay = Math.min(SYNC_BASE_BACKOFF_MS * (2 ** (failureCount - 1)), SYNC_MAX_BACKOFF_MS);
+      const nextAttemptAt = now + backoffDelay;
+
+      setSyncRetryMeta({ failureCount, cooldownUntil: nextAttemptAt });
+
+      const shouldPauseTimer = failureCount >= SYNC_MAX_CONSECUTIVE_ERRORS;
+      const syncErrorMessage = shouldPauseTimer
+        ? 'Synchronisation interrompue après plusieurs erreurs. Les sauvegardes reprendront après un délai ou une action manuelle.'
+        : 'Synchronisation en échec, nouvelle tentative programmée.';
+
+      if (shouldPauseTimer) {
+        const projectWithPendingSync = {
+          ...selectedProject,
+          pendingSync: true,
+        };
+
+        if (onProjectUpdate) {
+          onProjectUpdate(projectWithPendingSync);
+        }
+
+        const hasActiveSession = isRunningRef.current && currentSessionStart;
+        if (hasActiveSession) {
+          const elapsedSinceStart = Math.floor((now - currentSessionStart) / 1000);
+          setAccumulatedSessionTime((previous) => {
+            const updated = previous + elapsedSinceStart;
+            accumulatedSessionTimeRef.current = updated;
+            return updated;
+          });
+          setCurrentTime((previousTime) => {
+            const baseTime = baseProjectTimeRef.current || 0;
+            const updatedAccumulated = accumulatedSessionTimeRef.current || 0;
+            return Math.max(previousTime, baseTime + updatedAccumulated);
+          });
+        }
+
+        setCurrentSessionStart(null);
+        setIsRunning(false);
+      }
+
+      notifySyncStatus('error', {
+        message: syncErrorMessage,
+        failureCount,
+        nextAttemptAt,
+        backoffDelay,
+        error: error?.message || String(error),
+      });
+
+      scheduleSyncCooldown(backoffDelay, { failureCount });
+
       // Notifier le gestionnaire de connexion en cas d'erreur
       if (error.message && (error.message.includes('fetch') || error.message.includes('network'))) {
         connectionManager.handleConnectionError();
       }
     }
-  }, [selectedProject, currentSubject, subjectHistory, sessionStartTime, persistProject]);
+  }, [
+    selectedProject,
+    currentSubject,
+    subjectHistory,
+    sessionStartTime,
+    persistProject,
+    syncRetryMeta.cooldownUntil,
+    syncRetryMeta.failureCount,
+    resetSyncRetryState,
+    notifySyncStatus,
+    scheduleSyncCooldown,
+    currentSessionStart,
+    onProjectUpdate,
+  ]);
 
   useEffect(() => {
-    if (isRunning && selectedProject && currentSessionStart) {
+    const isSyncBlocked =
+      syncRetryMeta.failureCount >= SYNC_MAX_CONSECUTIVE_ERRORS &&
+      syncRetryMeta.cooldownUntil !== null &&
+      Date.now() < syncRetryMeta.cooldownUntil;
+
+    if (isRunning && !persistenceError && selectedProject && currentSessionStart && !isSyncBlocked) {
       console.log('⏱️ Démarrage de l\'interval timer pour projet:', selectedProject.name);
       intervalRef.current = setInterval(() => {
         // Calculer le temps réel écoulé depuis le début de la session courante
@@ -575,10 +800,31 @@ const TimerComponent = forwardRef((
         intervalRef.current = null;
       }
     };
-  }, [isRunning, selectedProject, currentSessionStart, accumulatedSessionTime, baseProjectTime, updateProjectTime]);
+  }, [
+    isRunning,
+    selectedProject,
+    currentSessionStart,
+    accumulatedSessionTime,
+    baseProjectTime,
+    updateProjectTime,
+    syncRetryMeta.failureCount,
+    syncRetryMeta.cooldownUntil,
+    persistenceError,
+  ]);
+
+  useEffect(() => {
+    if (persistenceError && intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, [persistenceError]);
 
   const handleStart = useCallback(async () => {
     if (!selectedProject || isRunning) return;
+
+    resetSyncRetryState('user_action_start');
+
+    const previousState = captureTimerState();
 
     // Si pas de sujet défini, demander
     if (!currentSubject || currentSubject.trim() === '') {
@@ -609,7 +855,7 @@ const TimerComponent = forwardRef((
     }
 
     lastInteractionRef.current = Date.now();
-    await startTimer();
+    await startTimer(previousState);
   }, [
     selectedProject,
     isRunning,
@@ -617,7 +863,9 @@ const TimerComponent = forwardRef((
     accumulatedSessionTime,
     cleanupTimer,
     sessionStartTime,
-    startTimer
+    startTimer,
+    resetSyncRetryState,
+    captureTimerState
   ]);
 
   useEffect(() => {
@@ -632,6 +880,8 @@ const TimerComponent = forwardRef((
 
   const handlePause = useCallback(async () => {
     if (!selectedProject || !isRunning) return;
+
+    const previousState = captureTimerState();
 
     try {
       clearInactivityTimeout();
@@ -670,21 +920,24 @@ const TimerComponent = forwardRef((
       await persistProject(updatedProject);
 
     } catch (error) {
-    console.error('Erreur lors de la pause:', error);
-  }
-}, [
-  selectedProject,
-  isRunning,
-  clearInactivityTimeout,
-  accumulatedSessionTime,
-  currentSessionStart,
-  baseProjectTime,
-  currentSubject,
-  subjectHistory,
-  sessionStartTime,
-  workSessions,
-  persistProject
-]);
+      console.error('Erreur lors de la pause:', error);
+      handlePersistenceFailure(error, { action: 'pause', projectId: selectedProject?.id }, previousState);
+    }
+  }, [
+    selectedProject,
+    isRunning,
+    clearInactivityTimeout,
+    accumulatedSessionTime,
+    currentSessionStart,
+    baseProjectTime,
+    currentSubject,
+    subjectHistory,
+    sessionStartTime,
+    workSessions,
+    persistProject,
+    handlePersistenceFailure,
+    captureTimerState
+  ]);
 
   useEffect(() => {
     if (
@@ -1243,6 +1496,7 @@ const TimerComponent = forwardRef((
 
     if (subjectModalType === 'start') {
       // Modal de démarrage
+      const previousState = captureTimerState();
       setCurrentSubject(newSubject);
       activeSessionSubjectRef.current = newSubject;
       setCurrentSessionStart(Date.now());
@@ -1256,7 +1510,7 @@ const TimerComponent = forwardRef((
       setShowSubjectModal(false);
       setSubjectInput('');
       setPendingConfirmationSubject('');
-      await startTimer();
+      await startTimer(previousState);
       
     } else if (subjectModalType === 'stop') {
       // Modal de confirmation/modification
@@ -2531,6 +2785,33 @@ const TimerComponent = forwardRef((
           )}
         </div>
       </div>
+
+      {/* Modal d'erreur de persistance */}
+      {persistenceError && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-70 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center mb-3">
+              <AlertTriangle className="w-5 h-5 text-danger-500 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900">Erreur de sauvegarde</h3>
+            </div>
+            <p className="text-sm text-gray-700 mb-4">
+              {persistenceError.message || "La sauvegarde du projet a échoué. Veuillez réessayer."}
+            </p>
+            <p className="text-xs text-gray-500 mb-6">
+              Le timer a été restauré à son état précédent en attendant la résolution de ce problème.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setPersistenceError(null)}
+                className="btn-primary"
+              >
+                Compris
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal d'inactivité */}
       {showInactivityModal && (
