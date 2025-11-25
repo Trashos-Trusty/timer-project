@@ -302,6 +302,13 @@ class ApiManager {
     }
 
     const url = `${this.config.baseUrl}?action=${endpoint}`;
+    const tokenPreview = this.config.token ? `${this.config.token.slice(0, 8)}...${this.config.token.slice(-8)}` : 'none';
+    console.log(`🔐 Requête sécurisée vers ${endpoint}`, {
+      url,
+      tokenPresent: Boolean(this.config.token),
+      tokenPreview,
+      freelanceId: this.config.freelanceId,
+    });
     const requestOptions = {
       ...options,
       headers: {
