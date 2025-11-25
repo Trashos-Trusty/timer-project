@@ -910,6 +910,15 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       throw new Error('Configuration API requise');
     }
 
+    if (!apiManager?.config?.token) {
+      const authError = new Error('Authentification requise pour enregistrer le projet.');
+      authError.isAuthError = true;
+      authError.status = 401;
+      authError.code = 'AUTH_TOKEN_MISSING';
+      console.warn('🔒 Sauvegarde bloquée: token d\'authentification manquant.');
+      throw authError;
+    }
+
     // Debug: Afficher les paramètres reçus par Electron
     console.log('⚡ Electron reçoit:', {
       projectId: projectData.id,
@@ -926,6 +935,9 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       sanitizedError.status = status || null;
       sanitizedError.statusText = statusText || null;
       sanitizedError.details = details || null;
+      if (status === 401) {
+        sanitizedError.isAuthError = true;
+      }
       throw sanitizedError;
     }
 
@@ -942,6 +954,11 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
 
     return savedProject;
   } catch (error) {
+    if (error?.isAuthError || error?.status === 401) {
+      console.warn('🔒 Sauvegarde interrompue pour cause d\'authentification:', error);
+      throw error;
+    }
+
     if (isNetworkError(error)) {
       console.warn('Connexion indisponible, mise en attente de la sauvegarde:', error);
       try {
