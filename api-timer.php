@@ -1,7 +1,7 @@
 <?php
 // API Timer - Version corrigée et simplifiée
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 1); // ⚠️ Désactiver en production : passer à 0 ou ajuster php.ini pour éviter d'exposer des erreurs
 ini_set('log_errors', 1);
 
 // Configurer le timezone français
@@ -48,7 +48,8 @@ function getConnection() {
         return $pdo;
     } catch (PDOException $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erreur de connexion base de données: ' . $e->getMessage()]);
+        error_log('Database connection error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Erreur de connexion base de données']);
         exit();
     }
 }
@@ -58,12 +59,22 @@ function validateToken($token) {
     global $JWT_SECRET;
     $parts = explode('.', $token);
     if (count($parts) !== 3) return false;
-    
-    $payload = json_decode(base64_decode($parts[1]), true);
-    if (!$payload || !isset($payload['freelance_id'])) return false;
-    
+
+    [$headerB64, $payloadB64, $signatureProvided] = $parts;
+
+    // Décoder avec validation stricte pour éviter les payloads corrompus
+    $header = json_decode(base64_decode($headerB64, true), true);
+    $payload = json_decode(base64_decode($payloadB64, true), true);
+    if (!$header || !$payload || !isset($payload['freelance_id'])) return false;
+
+    // Recalculer la signature en HMAC-SHA256 sur header.payload (compatibilité avec createToken)
+    $expectedSignature = base64_encode(hash_hmac('sha256', "$headerB64.$payloadB64", $JWT_SECRET, true));
+
+    // Comparaison timing-safe
+    if (!hash_equals($expectedSignature, $signatureProvided)) return false;
+
     if (isset($payload['exp']) && $payload['exp'] < time()) return false;
-    
+
     return $payload['freelance_id'];
 }
 
@@ -262,9 +273,10 @@ if ($action === 'projects' && $method === 'GET') {
         
     } catch (Exception $e) {
         http_response_code(500);
+        error_log('Erreur chargement projets: ' . $e->getMessage());
         echo json_encode([
             'success' => false,
-            'message' => 'Erreur chargement: ' . $e->getMessage()
+            'message' => 'Erreur chargement'
         ]);
     }
     exit();
@@ -548,11 +560,10 @@ if ($action === 'projects' && $method === 'POST') {
         ]);
         
     } catch (Exception $e) {
+        error_log('ERREUR SQL sauvegarde projet: ' . $e->getMessage());
         echo json_encode([
             'success' => false,
-            'message' => 'ERREUR SQL: ' . $e->getMessage(),
-            'code' => $e->getCode(),
-            'sql_state' => $e->getCode()
+            'message' => 'Erreur lors de la sauvegarde du projet'
         ]);
     }
     exit();
@@ -587,7 +598,8 @@ if ($action === 'projects' && $method === 'DELETE') {
         
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erreur suppression: ' . $e->getMessage()]);
+        error_log('Erreur suppression projet: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Erreur suppression']);
     }
     exit();
 }
