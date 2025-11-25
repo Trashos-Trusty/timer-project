@@ -601,13 +601,26 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
             }
         }
 
+        $savedProject = [
+            'project_id' => $projectId,
+            'project_uuid' => $projectUuid,
+            'currentTime' => $currentTime,
+            'status' => $status,
+            'name' => $projectData['name'],
+            'description' => $projectData['description'] ?? '',
+            'freelance_id' => $freelanceId
+        ];
+
         echo json_encode([
             'success' => true,
             'message' => 'Projet sauvegardé avec succès',
             'project_id' => $projectId,
             'project_uuid' => $projectUuid,
             'currentTime' => $currentTime,
-            'status' => $status
+            'status' => $status,
+            'data' => [
+                'project' => $savedProject
+            ]
         ]);
         
     } catch (Exception $e) {
