@@ -97,6 +97,15 @@ $method = $_SERVER['REQUEST_METHOD'];
 // Debug pour voir les requêtes reçues
 error_log("DEBUG REQUETE - Action: $action, Method: $method");
 
+// Extraction du token JWT depuis le header Authorization
+$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+$token = '';
+if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+    $token = $matches[1];
+}
+
+$freelanceId = $token ? validateToken($token) : false;
+
 // Route de login
 if ($action === 'login' && $method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -166,6 +175,49 @@ if ($action === 'login' && $method === 'POST') {
     exit();
 }
 
+// Vérifier la validité du token
+if ($action === 'verify' && $method === 'GET') {
+    if (!$freelanceId) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
+        exit();
+    }
+
+    $payload = [];
+    $parts = explode('.', $token);
+    if (count($parts) === 3) {
+        $payload = json_decode(base64_decode($parts[1], true), true) ?? [];
+    }
+
+    $expiresAt = isset($payload['exp']) ? date('c', $payload['exp']) : null;
+
+    echo json_encode([
+        'success' => true,
+        'freelance_id' => $freelanceId,
+        'expires_at' => $expiresAt
+    ]);
+    exit();
+}
+
+// Rafraîchir le token JWT
+if ($action === 'refresh' && $method === 'POST') {
+    if (!$freelanceId) {
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
+        exit();
+    }
+
+    $newToken = createToken($freelanceId);
+
+    echo json_encode([
+        'success' => true,
+        'token' => $newToken,
+        'freelance_id' => $freelanceId,
+        'expires_at' => date('c', time() + (24 * 60 * 60))
+    ]);
+    exit();
+}
+
 // Health check
 if ($action === 'health' && $method === 'GET') {
     echo json_encode([
@@ -177,14 +229,6 @@ if ($action === 'health' && $method === 'GET') {
 }
 
 // Vérification du token pour les routes protégées
-$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-$token = '';
-if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
-    $token = $matches[1];
-}
-
-$freelanceId = $token ? validateToken($token) : false;
-
 if (!$freelanceId && !in_array($action, ['health', 'login'])) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
