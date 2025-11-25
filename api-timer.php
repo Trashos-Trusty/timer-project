@@ -43,8 +43,30 @@ function getConnection() {
             ]
         );
         
-        // Configurer MySQL pour le timezone français
-        $pdo->exec("SET time_zone = 'Europe/Paris'");
+        // Configurer MySQL pour le timezone français (avec repli si indisponible)
+        $timeZoneConfigured = false;
+        $mysqlTimeZone = 'Europe/Paris';
+        $fallbackOffset = '+01:00';
+
+        try {
+            $result = $pdo->query("SELECT CONVERT_TZ('2000-01-01 00:00:00', 'UTC', " . $pdo->quote($mysqlTimeZone) . ')');
+            if ($result !== false && $result->fetchColumn() !== false) {
+                $pdo->exec('SET time_zone = ' . $pdo->quote($mysqlTimeZone));
+                $timeZoneConfigured = true;
+            }
+        } catch (PDOException $tzException) {
+            error_log('Warning: MySQL timezone Europe/Paris unavailable: ' . $tzException->getMessage());
+        }
+
+        if (!$timeZoneConfigured) {
+            try {
+                $pdo->exec("SET time_zone = '$fallbackOffset'");
+                $timeZoneConfigured = true;
+                error_log("Warning: MySQL timezone Europe/Paris not set, fallback to $fallbackOffset");
+            } catch (PDOException $fallbackException) {
+                error_log('Warning: MySQL timezone fallback failed: ' . $fallbackException->getMessage());
+            }
+        }
         return $pdo;
     } catch (PDOException $e) {
         http_response_code(500);
