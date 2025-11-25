@@ -354,9 +354,15 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
             throw new Exception("ERREUR: client_id est toujours null après création/récupération");
         }
         
-        // ÉTAPE 2: Vérifier si le projet existe déjà
+        // ÉTAPE 2: Vérifier si le projet existe déjà (ou générer un UUID s'il est manquant)
+        $projectUuid = $projectData['id'] ?? null;
+        if (empty($projectUuid)) {
+            $projectUuid = uniqid('proj_', true);
+            $projectData['id'] = $projectUuid; // Préserver pour le retour frontend
+        }
+
         $stmt = $pdo->prepare('SELECT id FROM projects WHERE project_uuid = ? AND freelance_id = ?');
-        $stmt->execute([$projectData['id'], $freelanceId]);
+        $stmt->execute([$projectUuid, $freelanceId]);
         $existingProject = $stmt->fetch();
         
         $currentTime = isset($projectData['currentTime']) ? intval($projectData['currentTime']) : 0;
@@ -411,7 +417,7 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
             $stmt->execute([
                 $freelanceId,
                 $clientId,
-                $projectData['id'],
+                $projectUuid,
                 $projectData['name'],
                 $projectData['description'] ?? '',
                 'timer',
@@ -555,6 +561,7 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
             'success' => true,
             'message' => 'Projet sauvegardé avec succès',
             'project_id' => $projectId,
+            'project_uuid' => $projectUuid,
             'currentTime' => $currentTime,
             'status' => $status
         ]);
