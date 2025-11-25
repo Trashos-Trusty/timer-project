@@ -26,7 +26,7 @@ describe('ApiManager.saveProject', () => {
     expect(savedProject.projectId).toBe(42);
     expect(savedProject.currentTime).toBe(3600);
     expect(savedProject.status).toBe('active');
-    expect(manager.makeSecureRequest).toHaveBeenCalledWith('projects', expect.any(Object));
+    expect(manager.makeSecureRequest).toHaveBeenCalledWith('save-project', expect.any(Object));
   });
 });
 

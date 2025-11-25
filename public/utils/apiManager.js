@@ -369,7 +369,7 @@ class ApiManager {
       let response;
 
       try {
-        response = await this.makeSecureRequest('projects', {
+        response = await this.makeSecureRequest('save-project', {
           method: 'POST',
           body: JSON.stringify(projectData)
         });
