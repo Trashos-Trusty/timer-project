@@ -2,9 +2,10 @@
 api-timer.php
 *.sql
 
-# Documentation interne - garder seulement readme.md  
+# Documentation interne - garder seulement readme.md et la fiche de présentation
 *.md
 !readme.md
+!docs/project-documentation.md
 
 # Plugin WordPress
 wordpress-plugin/
