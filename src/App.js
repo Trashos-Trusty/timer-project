@@ -909,6 +909,12 @@ function App() {
       const result = await window.electronAPI.saveProject(projectData, originalName);
       console.log('✅ Réponse de window.electronAPI.saveProject:', result);
 
+      if (result?.error) {
+        const error = new Error(result.error.message || "La sauvegarde du projet a échoué.");
+        error.details = result.error.details || null;
+        throw error;
+      }
+
       const mergedProject = {
         ...projectData,
         ...(result && typeof result === 'object' ? result : {})
