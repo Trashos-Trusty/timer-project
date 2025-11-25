@@ -918,11 +918,11 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       hasOriginalName: !!originalName
     });
 
-    await apiManager.saveProject(projectData, originalName);
-    console.log('Projet sauvegardé via API:', projectData.name);
+    const savedProject = await apiManager.saveProject(projectData, originalName);
+    console.log('Projet sauvegardé via API:', savedProject?.name || projectData.name);
 
     try {
-      const projectToCache = { ...projectData };
+      const projectToCache = { ...savedProject };
       delete projectToCache.queued;
       delete projectToCache.pendingSync;
       await projectCache.upsertProject(projectToCache);
@@ -930,7 +930,7 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       console.warn('Impossible de mettre à jour le cache local après sauvegarde:', cacheError);
     }
 
-    return projectData;
+    return savedProject;
   } catch (error) {
     if (isNetworkError(error)) {
       console.warn('Connexion indisponible, mise en attente de la sauvegarde:', error);
