@@ -361,29 +361,18 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
     try {
         $pdo = getConnection();
 
-        // S'assurer que les colonnes nécessaires existent pour la persistance du timer
- $requiredColumns = [
-           'current_time' => "ALTER TABLE `projects` ADD COLUMN `current_time` INT DEFAULT 0 AFTER `total_time_allocated`",
-            'status' => "ALTER TABLE `projects` ADD COLUMN `status` VARCHAR(50) DEFAULT 'active' AFTER `hourly_rate`"
-        ];
-
-        $columnsStmt = $pdo->query("SHOW COLUMNS FROM projects");
-        $existingColumns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
-
-        foreach ($requiredColumns as $column => $alterSql) {
-            if (!in_array($column, $existingColumns)) {
-                try {
-                    $pdo->exec($alterSql);
-                } catch (Exception $e) {
-                    if (strpos($e->getMessage(), 'Duplicate column') === false) {
-                        throw $e;
-                    }
-                }
-            }
-        }
-
         // ÉTAPE 1: Créer ou récupérer un client avec DEBUG
         $clientName = $projectData['clientName'] ?? $projectData['client'] ?? 'Client par défaut';
+
+        // Vérifier la présence des colonnes timer (gérées via migration dédiée)
+        $columnsStmt = $pdo->query("SHOW COLUMNS FROM projects");
+        $existingColumns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
+        $hasCurrentTimeColumn = in_array('current_time', $existingColumns);
+        $hasStatusColumn = in_array('status', $existingColumns);
+
+        if (!$hasCurrentTimeColumn || !$hasStatusColumn) {
+            error_log('Projects table missing timer columns. Run the dedicated migration to add current_time and status.');
+        }
 
         // Vérifier dynamiquement si la colonne client_id existe (schema OVH historique)
         $clientColumnsStmt = $pdo->query("SHOW COLUMNS FROM clients");
@@ -453,51 +442,55 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
 
         if ($existingProject) {
             // UPDATE du projet existant
-            $stmt = $pdo->prepare('UPDATE projects SET
-                client_id = ?,
-                name = ?,
-                description = ?,
-                total_time_allocated = ?,
-                hourly_rate = ?,
-                current_time = ?,
-                status = ?,
-                last_activity = NOW(),
-                updated_at = NOW()
-                WHERE id = ? AND freelance_id = ?');
-
-            $stmt->execute([
+            $updateFields = [
+                'client_id = ?',
+                'name = ?',
+                'description = ?',
+                'total_time_allocated = ?',
+                'hourly_rate = ?'
+            ];
+            $updateValues = [
                 $clientId,
                 $projectData['name'],
                 $projectData['description'] ?? '',
                 $projectData['totalTime'] ?? 0,
-                $projectData['hourlyRate'] ?? 0,
-                $currentTime,
-                $status,
-                $existingProject['id'],
-                $freelanceId
-            ]);
+                $projectData['hourlyRate'] ?? 0
+            ];
+
+            if ($hasCurrentTimeColumn) {
+                $updateFields[] = 'current_time = ?';
+                $updateValues[] = $currentTime;
+            }
+
+            if ($hasStatusColumn) {
+                $updateFields[] = 'status = ?';
+                $updateValues[] = $status;
+            }
+
+            $updateFields[] = 'last_activity = NOW()';
+            $updateFields[] = 'updated_at = NOW()';
+
+            $updateValues[] = $existingProject['id'];
+            $updateValues[] = $freelanceId;
+
+            $updateSql = 'UPDATE projects SET ' . implode(",\n                ", $updateFields) . ' WHERE id = ? AND freelance_id = ?';
+            $stmt = $pdo->prepare($updateSql);
+            $stmt->execute($updateValues);
             $projectId = $existingProject['id'];
         } else {
             // INSERT nouveau projet
-            $stmt = $pdo->prepare('INSERT INTO projects (
-                freelance_id,
-                client_id,
-                project_uuid,
-                name,
-                description,
-                project_type,
-                total_time_allocated,
-                hourly_rate,
-                current_time,
-                status,
-                start_date,
-                end_date,
-                last_activity,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+            $insertColumns = [
+                'freelance_id',
+                'client_id',
+                'project_uuid',
+                'name',
+                'description',
+                'project_type',
+                'total_time_allocated',
+                'hourly_rate'
+            ];
 
-            $stmt->execute([
+            $insertValues = [
                 $freelanceId,
                 $clientId,
                 $projectUuid,
@@ -505,13 +498,40 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
                 $projectData['description'] ?? '',
                 'timer',
                 $projectData['totalTime'] ?? 0,
-                $projectData['hourlyRate'] ?? 0,
-                $currentTime,
-                $status,
+                $projectData['hourlyRate'] ?? 0
+            ];
+
+            if ($hasCurrentTimeColumn) {
+                $insertColumns[] = 'current_time';
+                $insertValues[] = $currentTime;
+            }
+
+            if ($hasStatusColumn) {
+                $insertColumns[] = 'status';
+                $insertValues[] = $status;
+            }
+
+            $insertColumns = array_merge($insertColumns, [
+                'start_date',
+                'end_date',
+                'last_activity',
+                'created_at',
+                'updated_at'
+            ]);
+
+            $insertValues = array_merge($insertValues, [
                 null,
                 null,
                 $currentTime > 0 ? date('Y-m-d H:i:s') : null
             ]);
+
+            $placeholders = array_fill(0, count($insertColumns) - 2, '?');
+            $placeholders[] = 'NOW()';
+            $placeholders[] = 'NOW()';
+
+            $insertSql = 'INSERT INTO projects (' . implode(', ', $insertColumns) . ') VALUES (' . implode(', ', $placeholders) . ')';
+            $stmt = $pdo->prepare($insertSql);
+            $stmt->execute($insertValues);
             $projectId = $pdo->lastInsertId();
         }
         
