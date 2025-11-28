@@ -15,6 +15,7 @@ import MiniTimerOverlay from './components/MiniTimerOverlay';
 import MiniTimerWindow from './components/MiniTimerWindow';
 import connectionManager from './connectionManager';
 import { isSessionExpiredError, markSessionExpiredError } from './utils/authErrors';
+import { findDuplicateProjectByName } from './utils/projectNameUtils';
 import './index.css';
 
 function normalizeProject(project) {
@@ -888,12 +889,25 @@ function App() {
         return;
       }
       
-      setIsSaving(true);
-      
       // Chercher le projet existant par ID pour obtenir l'ancien nom
       const existingProject = projects.find(p => p.id === projectData.id);
       const originalName = existingProject ? existingProject.name : null;
       const isNewProject = !existingProject;
+
+      const duplicateProject = findDuplicateProjectByName(projects, projectData.id, projectData.name);
+
+      if (duplicateProject) {
+        const duplicateError = new Error('Vous avez déjà un projet avec ce nom. Les projets sont uniques par compte.');
+        duplicateError.status = 409;
+        duplicateError.statusText = 'CONFLICT';
+        duplicateError.details = {
+          duplicateProjectId: duplicateProject.id,
+          duplicateProjectName: duplicateProject.name
+        };
+        throw duplicateError;
+      }
+
+      setIsSaving(true);
       
       console.log('📝 Sauvegarde projet:', {
         isEditing: !!editingProject,
