@@ -344,16 +344,16 @@ class MaintenanceTimerClientPlugin {
             return;
         }
         
-        // Récupérer les données de maintenance
+        // Récupérer les données de maintenance (rafraîchies automatiquement si besoin)
         $maintenance_data = $this->get_cached_maintenance_data();
-        
-        if (!$maintenance_data) {
+
+        if (!$maintenance_data || empty($maintenance_data['data'])) {
             $this->show_sync_needed_page();
             return;
         }
-        
+
         // Afficher la page de maintenance
-        $this->show_maintenance_dashboard($maintenance_data);
+        $this->show_maintenance_dashboard($maintenance_data['data'], $maintenance_data['last_sync'] ?? null);
     }
     
     /**
@@ -477,24 +477,47 @@ class MaintenanceTimerClientPlugin {
             'numberposts' => 1,
             'post_status' => 'publish'
         ));
-        
-        if (!empty($posts)) {
-            return get_post_meta($posts[0]->ID, '_maintenance_data', true);
+
+        if (empty($posts)) {
+            return false;
         }
-        
-        return false;
+
+        $post_id = $posts[0]->ID;
+        $last_sync = (int) get_post_meta($post_id, '_last_sync', true);
+        $is_fresh = $last_sync && (time() - $last_sync) < $this->cache_duration;
+
+        // Rafraîchir automatiquement les données si le cache est trop ancien
+        if (!$is_fresh) {
+            $this->sync_maintenance_data();
+            $last_sync = (int) get_post_meta($post_id, '_last_sync', true);
+        }
+
+        $data = get_post_meta($post_id, '_maintenance_data', true);
+
+        if (!$data) {
+            return false;
+        }
+
+        return array(
+            'data' => $data,
+            'last_sync' => $last_sync
+        );
     }
     
     /**
      * Afficher le dashboard de maintenance
      */
-    private function show_maintenance_dashboard($project_data) {
+    private function show_maintenance_dashboard($project_data, $last_sync = null) {
         // Les temps sont déjà en secondes dans l'API
         $total_time = $project_data['totalTime'] ?? 0;
         $used_time = $project_data['usedTime'] ?? 0;
         $remaining_time = max(0, $total_time - $used_time);
         $progress_percent = $total_time > 0 ? ($used_time / $total_time) * 100 : 0;
-        $last_sync = time(); // Pour l'affichage
+
+        // Fallback si aucune synchronisation n'a été effectuée
+        if (empty($last_sync)) {
+            $last_sync = time();
+        }
         
         ?>
         <div class="wrap">
@@ -538,7 +561,7 @@ class MaintenanceTimerClientPlugin {
                     <p><strong><?php _e('Client:', 'maintenance-timer-client'); ?></strong> <?php echo esc_html($project_data['clientName']); ?></p>
                     <?php endif; ?>
                     <p><strong><?php _e('Projet:', 'maintenance-timer-client'); ?></strong> <?php echo esc_html($project_data['name'] ?? get_option('maintenance_timer_project_name')); ?></p>
-                    <p><strong><?php _e('Dernière mise à jour:', 'maintenance-timer-client'); ?></strong> <?php echo date_i18n('d/m/Y H:i'); ?></p>
+                    <p><strong><?php _e('Dernière mise à jour:', 'maintenance-timer-client'); ?></strong> <?php echo $last_sync ? date_i18n('d/m/Y H:i', $last_sync) : __('Jamais', 'maintenance-timer-client'); ?></p>
                     <p><strong><?php _e('Sessions de travail:', 'maintenance-timer-client'); ?></strong> <?php echo count($project_data['workSessions'] ?? []); ?></p>
                 </div>
             </div>
