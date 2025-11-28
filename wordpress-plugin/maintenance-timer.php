@@ -347,6 +347,13 @@ class MaintenanceTimerClientPlugin {
         // Récupérer les données de maintenance (rafraîchies automatiquement si besoin)
         $maintenance_data = $this->get_cached_maintenance_data();
 
+        // Si aucune donnée n'est trouvée (première visite par exemple), tenter une synchronisation
+        if (!$maintenance_data || empty($maintenance_data['data'])) {
+            if ($this->sync_maintenance_data()) {
+                $maintenance_data = $this->get_cached_maintenance_data();
+            }
+        }
+
         if (!$maintenance_data || empty($maintenance_data['data'])) {
             $this->show_sync_needed_page();
             return;
