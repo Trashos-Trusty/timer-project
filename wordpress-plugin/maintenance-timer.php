@@ -343,7 +343,10 @@ class MaintenanceTimerClientPlugin {
             $this->show_configuration_needed_page();
             return;
         }
-        
+
+        // Synchroniser automatiquement lors de l'ouverture du dashboard
+        $this->sync_maintenance_data();
+
         // Récupérer les données de maintenance (rafraîchies automatiquement si besoin)
         $maintenance_data = $this->get_cached_maintenance_data();
 
