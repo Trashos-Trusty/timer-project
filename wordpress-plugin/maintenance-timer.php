@@ -548,7 +548,7 @@ class MaintenanceTimerClientPlugin {
             <!-- Vue d'ensemble -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                 <!-- Temps restant -->
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; text-align: center;">
+                <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; border-radius: 12px; text-align: center;">
                     <h2 style="margin: 0 0 10px 0; color: white;"><?php _e('Temps Restant', 'maintenance-timer-client'); ?></h2>
                     <div style="font-size: 3em; font-weight: bold; font-family: monospace;">
                         <?php echo $this->format_duration($remaining_time); ?>
@@ -839,7 +839,7 @@ class MaintenanceTimerClientPlugin {
         ?>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
             <!-- Temps restant -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; text-align: center;">
+            <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 30px; border-radius: 12px; text-align: center;">
                 <h3 style="margin: 0 0 10px 0; color: white;"><?php _e('Temps Restant', 'maintenance-timer-client'); ?></h3>
                 <div style="font-size: 2.5em; font-weight: bold; font-family: monospace;">
                     <?php echo $this->format_duration($remaining_time); ?>
