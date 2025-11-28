@@ -13,6 +13,7 @@ const ProjectModal = ({ project, onSave, onClose }) => {
   });
   const [timeInput, setTimeInput] = useState({ hours: 0, minutes: 0 });
   const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -30,6 +31,7 @@ const ProjectModal = ({ project, onSave, onClose }) => {
       const hours = Math.floor((project.totalTime || 0) / 3600);
       const minutes = Math.floor(((project.totalTime || 0) % 3600) / 60);
       setTimeInput({ hours, minutes });
+      setSubmitError(null);
     } else {
       // Nouveau projet - générer un nouvel ID unique
       setFormData({
@@ -42,6 +44,7 @@ const ProjectModal = ({ project, onSave, onClose }) => {
         status: 'stopped'
       });
       setTimeInput({ hours: 0, minutes: 0 });
+      setSubmitError(null);
     }
   }, [project]);
 
@@ -68,6 +71,7 @@ const ProjectModal = ({ project, onSave, onClose }) => {
     }
 
     setIsLoading(true);
+    setSubmitError(null);
     
     try {
       const totalSeconds = (timeInput.hours * 3600) + (timeInput.minutes * 60);
@@ -113,13 +117,13 @@ const ProjectModal = ({ project, onSave, onClose }) => {
         ? (typeof error.details === 'string' ? error.details : JSON.stringify(error.details, null, 2))
         : null;
 
-      const alertMessage = [
+      const message = [
         `Erreur lors de la sauvegarde: ${error.message}`,
         statusInfo ? `Informations de statut: ${statusInfo}` : null,
         details ? `Détails supplémentaires: ${details}` : null
-      ].filter(Boolean).join('\n');
+      ].filter(Boolean).join(' · ');
 
-      alert(alertMessage);
+      setSubmitError(message);
     } finally {
       setIsLoading(false);
     }
@@ -186,6 +190,19 @@ const ProjectModal = ({ project, onSave, onClose }) => {
 
         {/* Formulaire */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {submitError && (
+            <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-danger-800 text-sm flex space-x-3">
+              <div className="flex-shrink-0">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-danger-100 text-danger-700 text-xs font-semibold">!
+                </span>
+              </div>
+              <div className="space-y-1">
+                <p className="font-semibold">Impossible d'enregistrer le projet</p>
+                <p className="leading-relaxed">{submitError}</p>
+              </div>
+            </div>
+          )}
+
           {/* Nom du projet */}
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
