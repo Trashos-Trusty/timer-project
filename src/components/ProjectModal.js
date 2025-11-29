@@ -108,22 +108,27 @@ const ProjectModal = ({ project, onSave, onClose }) => {
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde:', error);
       // Afficher l'erreur à l'utilisateur mais ne pas fermer la modal
-      const statusInfo = [
-        error?.status ? `statut ${error.status}` : null,
-        error?.statusText ? `${error.statusText}` : null
-      ].filter(Boolean).join(' - ');
+      // Message discret et ciblé pour les doublons de nom
+      if (error?.status === 409 || error?.statusText === 'CONFLICT' || error?.details?.duplicateProjectId) {
+        setSubmitError('Impossible d\'avoir deux projets avec le même nom.');
+      } else {
+        const statusInfo = [
+          error?.status ? `statut ${error.status}` : null,
+          error?.statusText ? `${error.statusText}` : null
+        ].filter(Boolean).join(' - ');
 
-      const details = error?.details
-        ? (typeof error.details === 'string' ? error.details : JSON.stringify(error.details, null, 2))
-        : null;
+        const details = error?.details
+          ? (typeof error.details === 'string' ? error.details : JSON.stringify(error.details, null, 2))
+          : null;
 
-      const message = [
-        `Erreur lors de la sauvegarde: ${error.message}`,
-        statusInfo ? `Informations de statut: ${statusInfo}` : null,
-        details ? `Détails supplémentaires: ${details}` : null
-      ].filter(Boolean).join(' · ');
+        const message = [
+          `Erreur lors de la sauvegarde: ${error.message}`,
+          statusInfo ? `Informations de statut: ${statusInfo}` : null,
+          details ? `Détails supplémentaires: ${details}` : null
+        ].filter(Boolean).join(' · ');
 
-      setSubmitError(message);
+        setSubmitError(message);
+      }
     } finally {
       setIsLoading(false);
     }
