@@ -13,11 +13,11 @@ import {
 } from 'lucide-react';
 import { TRUSTY_TIMER_LOGO_DATA_URL } from '../assets/trustytimerLogoData';
 
-const Header = ({ 
-  currentView, 
-  onViewChange, 
-  onNewProject, 
-  onOpenApiConfig, 
+const Header = ({
+  currentView,
+  onViewChange,
+  onNewProject,
+  onOpenApiConfig,
   onLogout,
   onOpenFeedback = () => {},
   isApiConfigured,
@@ -30,6 +30,22 @@ const Header = ({
   // Mode développeur - désactivé par défaut pour les utilisateurs finaux
   // Pour l'activer, changer cette ligne ou créer un fichier .env avec REACT_APP_DEVELOPER_MODE=true
   const isDeveloperMode = process.env.REACT_APP_DEVELOPER_MODE === 'true' || false;
+
+  const freelanceDisplayName = React.useMemo(() => {
+    if (!freelanceInfo) {
+      return '';
+    }
+
+    const possibleNames = [
+      freelanceInfo.name,
+      freelanceInfo.fullName,
+      [freelanceInfo.firstName, freelanceInfo.lastName].filter(Boolean).join(' ').trim(),
+      [freelanceInfo.firstname, freelanceInfo.lastname].filter(Boolean).join(' ').trim(),
+      freelanceInfo.email
+    ];
+
+    return possibleNames.find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+  }, [freelanceInfo]);
 
   // Fonction pour télécharger le plugin WordPress
   const handleDownloadPlugin = () => {
@@ -61,7 +77,9 @@ const Header = ({
           <div>
             <h1 className="text-xl font-bold text-gray-900">TrustyTimer</h1>
             <p className="text-sm text-gray-500">
-              {freelanceInfo ? `Bonjour ${freelanceInfo.name}` : 'Gestionnaire de temps de projet'}
+              {freelanceDisplayName
+                ? `Bonjour ${freelanceDisplayName}`
+                : 'Gestionnaire de temps de projet'}
             </p>
           </div>
 
