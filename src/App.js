@@ -60,6 +60,7 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [isStopwatchRunning, setIsStopwatchRunning] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [miniTimerSnapshot, setMiniTimerSnapshot] = useState(null);
@@ -818,6 +819,10 @@ function App() {
       setMiniTimerSnapshot(null);
     }
 
+    if (newView === 'timer') {
+      setIsStopwatchRunning(false);
+    }
+
     setCurrentView(newView);
   };
 
@@ -1096,6 +1101,8 @@ function App() {
     }
   };
 
+  const isInteractionLocked = isTimerRunning || isStopwatchRunning;
+
   if (isMiniWindowMode) {
     return (
       <MiniTimerWindow
@@ -1137,7 +1144,7 @@ function App() {
         isApiConfigured={isApiConfigured}
         freelanceInfo={freelanceInfo}
         disabled={isSaving}
-        isTimerRunning={isTimerRunning}
+        isTimerRunning={isInteractionLocked}
         pendingSync={hasPendingSync}
         pendingSyncCount={offlineSyncInfo?.pending ?? 0}
       />
@@ -1153,9 +1160,9 @@ function App() {
               onEditProject={handleEditProject}
               onDeleteProject={handleDeleteProject}
               onRefresh={handleRefresh}
-              disabled={isSaving || isTimerRunning}
+              disabled={isSaving || isInteractionLocked}
               isRefreshing={isRefreshing}
-              isTimerRunning={isTimerRunning}
+              isTimerRunning={isInteractionLocked}
             />
           </div>
         )}
@@ -1176,7 +1183,7 @@ function App() {
               onSessionExpired={handleSessionExpired}
             />
           ) : (
-            <Stopwatch />
+            <Stopwatch onRunningChange={setIsStopwatchRunning} />
           )}
         </div>
       </div>
