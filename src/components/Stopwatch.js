@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Square, RotateCcw, Clock } from 'lucide-react';
 
-const Stopwatch = () => {
+const Stopwatch = ({ onRunningChange = () => {} }) => {
   const [time, setTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [laps, setLaps] = useState([]);
@@ -25,6 +25,14 @@ const Stopwatch = () => {
       }
     };
   }, [isRunning]);
+
+  useEffect(() => {
+    onRunningChange(isRunning);
+
+    return () => {
+      onRunningChange(false);
+    };
+  }, [isRunning, onRunningChange]);
 
   const formatTime = (seconds) => {
     const hours = Math.floor(seconds / 3600);
