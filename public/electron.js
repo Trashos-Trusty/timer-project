@@ -1074,6 +1074,27 @@ ipcMain.handle('is-api-configured', async () => {
 ipcMain.handle('authenticate-api', async (event, credentials) => {
   try {
     const result = await apiManager.authenticate(credentials);
+    if (result?.success && configManager) {
+      const existingFreelance = configManager.getFreelanceConfig?.() || {};
+      const freelance = result.freelanceInfo || {};
+
+      const normalizedName = (
+        freelance.name ||
+        freelance.fullName ||
+        [freelance.firstName, freelance.lastName].filter(Boolean).join(' ').trim() ||
+        [freelance.firstname, freelance.lastname].filter(Boolean).join(' ').trim() ||
+        freelance.email ||
+        existingFreelance.name ||
+        ''
+      ).trim();
+
+      await configManager.setFreelanceConfig?.({
+        ...existingFreelance,
+        id: freelance.id ?? result.freelanceId ?? existingFreelance.id ?? null,
+        name: normalizedName,
+        email: freelance.email || existingFreelance.email || ''
+      });
+    }
     return result;
   } catch (error) {
     console.error('Erreur lors de l\'authentification API:', error);
