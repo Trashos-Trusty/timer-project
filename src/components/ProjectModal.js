@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, FolderPlus, Clock } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 const ProjectModal = ({ project, onSave, onClose }) => {
   const [formData, setFormData] = useState({
@@ -15,6 +16,7 @@ const ProjectModal = ({ project, onSave, onClose }) => {
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(() => {
     if (project) {
@@ -111,6 +113,11 @@ const ProjectModal = ({ project, onSave, onClose }) => {
       // Message discret et ciblé pour les doublons de nom
       if (error?.status === 409 || error?.statusText === 'CONFLICT' || error?.details?.duplicateProjectId) {
         setSubmitError('Impossible d\'avoir deux projets avec le même nom.');
+        addToast({
+          type: 'error',
+          title: 'Impossible d\'enregistrer le projet',
+          message: 'Impossible d\'avoir deux projets avec le même nom.'
+        });
       } else {
         const statusInfo = [
           error?.status ? `statut ${error.status}` : null,
@@ -128,6 +135,11 @@ const ProjectModal = ({ project, onSave, onClose }) => {
         ].filter(Boolean).join(' · ');
 
         setSubmitError(message);
+        addToast({
+          type: 'error',
+          title: 'Impossible d\'enregistrer le projet',
+          message: message || 'Une erreur est survenue lors de l\'enregistrement du projet.'
+        });
       }
     } finally {
       setIsLoading(false);
@@ -195,19 +207,6 @@ const ProjectModal = ({ project, onSave, onClose }) => {
 
         {/* Formulaire */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {submitError && (
-            <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-danger-800 text-sm flex space-x-3">
-              <div className="flex-shrink-0">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-danger-100 text-danger-700 text-xs font-semibold">!
-                </span>
-              </div>
-              <div className="space-y-1">
-                <p className="font-semibold">Impossible d'enregistrer le projet</p>
-                <p className="leading-relaxed">{submitError}</p>
-              </div>
-            </div>
-          )}
-
           {/* Nom du projet */}
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
@@ -337,4 +336,4 @@ const ProjectModal = ({ project, onSave, onClose }) => {
   );
 };
 
-export default ProjectModal; 
+export default ProjectModal;
