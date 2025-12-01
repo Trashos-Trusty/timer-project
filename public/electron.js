@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, shell, powerMonitor, dialog, nativeImage } = require('electron');
 const path = require('path');
 const log = require('electron-log/main');
 
@@ -72,6 +72,9 @@ let isDrainingOfflineQueue = false;
 const appStartUrl = isDev
   ? 'http://localhost:3000'
   : `file://${path.join(__dirname, '../build/index.html')}`;
+
+const appIconPath = path.join(__dirname, '..', 'assets', 'trustytimer-logo.png');
+const appIcon = nativeImage.createFromPath(appIconPath);
 
 if (!isDev) {
   setupProductionLogging();
@@ -466,7 +469,7 @@ function createWindow() {
       backgroundThrottling: false,
     },
     titleBarStyle: 'default',
-    icon: path.join(__dirname, 'icon.png'),
+    icon: appIcon && !appIcon.isEmpty() ? appIcon : appIconPath,
     show: false
   });
 
