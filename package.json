@@ -61,6 +61,7 @@
       "public/electron.js",
       "public/preload.js",
       "public/utils/**/*",
+      "assets/trustytimer-logo.png",
       "node_modules/**/*",
       "!node_modules/electron/**/*",
       "!**/node_modules/**/*.{md,txt,yml,yaml}"
