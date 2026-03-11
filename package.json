@@ -1,6 +1,6 @@
 {
   "name": "timer-project",
-  "version": "1.0.114",
+  "version": "1.0.115",
   "description": "Application de minuteur de projet avec Electron et React",
   "author": "Enguerran Chaulier <enguerran@trustystudio.fr>",
   "main": "public/electron.js",
@@ -56,7 +56,9 @@
     "protocols": [
       {
         "name": "Soreva Timer",
-        "schemes": ["soreva-timer"]
+        "schemes": [
+          "soreva-timer"
+        ]
       }
     ],
     "directories": {
