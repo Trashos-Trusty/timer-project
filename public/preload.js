@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // API pour les projets (nouvelle architecture API REST)
   saveProject: (projectData, originalName = null) => ipcRenderer.invoke('save-project', projectData, originalName),
   loadProjects: () => ipcRenderer.invoke('load-projects'),
+  loadClients: () => ipcRenderer.invoke('load-clients'),
   loadProject: (projectId) => ipcRenderer.invoke('load-project', projectId),
   deleteProject: (projectId) => ipcRenderer.invoke('delete-project', projectId),
   

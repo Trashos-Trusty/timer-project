@@ -8,7 +8,7 @@ class ConfigManager {
     this.config = {
       // Configuration API centralisée
       api: {
-        baseUrl: 'https://trusty-projet.fr/api/api-timer.php', // Serveur API PHP sur trusty-projet.fr
+        baseUrl: 'https://timer.soreva.app/api-timer.php',
         timeout: 30000,
         retryAttempts: 3,
         retryDelay: 1000
@@ -26,9 +26,11 @@ class ConfigManager {
         rememberCredentials: false,
         autoLogin: false
       },
-      // Configuration spécifique au freelance
+      // Configuration specifique au freelance (lie au Core)
       freelance: {
         id: null,
+        coreUserId: null,
+        orgId: null,
         name: '',
         email: '',
         timezone: 'Europe/Paris'
@@ -42,7 +44,21 @@ class ConfigManager {
       if (await fs.pathExists(this.configPath)) {
         const savedConfig = await fs.readJSON(this.configPath);
         this.config = { ...this.config, ...savedConfig };
-        console.log('✅ Configuration chargée');
+        // Migration : remplacer les anciennes URL API par le sous-domaine Timer
+        const newApiUrl = 'https://timer.soreva.app/api-timer.php';
+        const oldUrls = [
+          'https://trusty-projet.fr/api/api-timer.php',
+          'https://soreva.app/timer/api-timer.php'
+        ];
+        const current = this.config.api?.baseUrl || '';
+        const needsMigration = oldUrls.includes(current) || current.includes('trusty-projet.fr');
+        if (needsMigration) {
+          this.config.api.baseUrl = newApiUrl;
+          await this.saveConfig();
+          console.log('✅ URL API migrée vers timer.soreva.app');
+        } else {
+          console.log('✅ Configuration chargée');
+        }
       } else {
         console.log('ℹ️ Aucune configuration existante, utilisation des valeurs par défaut');
         await this.saveConfig();
@@ -170,7 +186,7 @@ class ConfigManager {
       // Réinitialiser la configuration en mémoire
       this.config = {
         api: {
-          baseUrl: 'https://trusty-projet.fr/api/api-timer.php',
+          baseUrl: 'https://timer.soreva.app/api-timer.php',
           timeout: 30000,
           retryAttempts: 3,
           retryDelay: 1000
@@ -188,13 +204,14 @@ class ConfigManager {
         },
         freelance: {
           id: null,
+          coreUserId: null,
+          orgId: null,
           name: '',
           email: '',
           timezone: 'Europe/Paris'
         }
       };
       
-      // Sauvegarder la configuration par défaut
       await this.saveConfig();
       
       console.log('✅ Configuration réinitialisée');

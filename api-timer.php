@@ -1,34 +1,172 @@
 <?php
-// API Timer - Version corrigée et simplifiée
+// API Timer - Integre a soreva_full + CoreAuthService
+// Secrets : config centralisée ou variables d'environnement (Tranche 1 sécurité)
 error_reporting(E_ALL);
-ini_set('display_errors', 1); // ⚠️ Désactiver en production : passer à 0 ou ajuster php.ini pour éviter d'exposer des erreurs
+ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
-// Configurer le timezone français
 date_default_timezone_set('Europe/Paris');
 
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+// --------------------------------------------------------------------------
+// CoreAuthService : authentification centralisee (meme JWT que Dashboard/Facture)
+// --------------------------------------------------------------------------
+require_once __DIR__ . '/../trusty_core/CoreAuthService.php';
+use TrustyCore\CoreAuthService;
+use TrustyCore\SecurityHeaders;
 
-// Gérer les requêtes preflight CORS
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
+$trustyCoreDir = dirname(__DIR__) . '/trusty_core';
+if (is_file($trustyCoreDir . '/SecurityHeaders.php')) {
+    require_once $trustyCoreDir . '/SecurityHeaders.php';
 }
 
-// Configuration de la base de données
+// --------------------------------------------------------------------------
+// Secrets : config centralisée ou env — aucun secret en dur dans le code
+// --------------------------------------------------------------------------
+$TIMER_SECRETS = [];
+$loaderPath = '/var/www/_secrets/soreva/load.php';
+if (!is_file($loaderPath)) {
+    $loaderPath = getenv('SOREVA_LOADER_PATH') ?: '';
+}
+if ($loaderPath !== '' && is_file($loaderPath)) {
+    require_once $loaderPath;
+    $TIMER_SECRETS = soreva_load_secrets(__DIR__ . '/api');
+} else {
+    $TIMER_SECRETS = [
+        'db' => [
+            'host' => getenv('DB_HOST') ?: getenv('SOREVA_DB_HOST') ?: '127.0.0.1',
+            'port' => (int) (getenv('DB_PORT') ?: getenv('SOREVA_DB_PORT') ?: '3306'),
+            'name' => getenv('DB_DATABASE') ?: getenv('DB_NAME') ?: getenv('SOREVA_DB_NAME') ?: 'soreva_full',
+            'user' => getenv('DB_USERNAME') ?: getenv('DB_USER') ?: getenv('SOREVA_DB_USER') ?: '',
+            'pass' => getenv('DB_PASSWORD') ?: getenv('SOREVA_DB_PASS') ?: '',
+        ],
+        'jwt_secret' => getenv('JWT_SECRET') ?: getenv('SOREVA_JWT_SECRET') ?: '',
+    ];
+}
+
+$db = $TIMER_SECRETS['db'] ?? [];
+// Une seule config DB : utilisée par CoreAuthService et par getConnection()
 $DB_CONFIG = [
-    'host' => 'xxxxx',
-    'username' => 'xx',
-    'password' => 'xxxxx',
-    'database' => 'xxxx'
+    'host' => $db['host'] ?? '127.0.0.1',
+    'username' => $db['user'] ?? '',
+    'password' => $db['pass'] ?? '',
+    'database' => $db['name'] ?? 'soreva_full',
 ];
+$jwtSecret = $TIMER_SECRETS['jwt_secret'] ?? '';
 
-$JWT_SECRET = 'xxxxx';
+function timer_json(array $data, int $status = 200): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    http_response_code($status);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
-// Fonction de connexion à la base
+function timer_fail(string $message, int $status = 400, array $extra = []): void
+{
+    timer_json(array_merge(['success' => false, 'message' => $message], $extra), $status);
+}
+
+function timer_log(string $msg): void
+{
+    if (getenv('TIMER_DEBUG') === '1') {
+        error_log($msg);
+    }
+}
+
+function getBearerToken(): string
+{
+    $sources = [
+        $_SERVER['HTTP_AUTHORIZATION'] ?? '',
+        $_SERVER['Authorization'] ?? '',
+        $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '',
+    ];
+    foreach ($sources as $raw) {
+        if ($raw !== '' && preg_match('/Bearer\s+(.+)$/i', $raw, $matches)) {
+            return trim($matches[1]);
+        }
+    }
+    return '';
+}
+
+function jwt_expires_at(string $token): ?string
+{
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) {
+        return null;
+    }
+    $payload = $parts[1];
+    $payload = str_replace(['-', '_'], ['+', '/'], $payload);
+    $decoded = base64_decode($payload, true);
+    if ($decoded === false) {
+        return null;
+    }
+    $data = json_decode($decoded, true);
+    if (!is_array($data) || !isset($data['exp']) || !is_numeric($data['exp'])) {
+        return null;
+    }
+    return date('c', (int) $data['exp']);
+}
+
+if ($jwtSecret === '') {
+    timer_fail('Erreur serveur', 500);
+}
+
+CoreAuthService::configure(
+    $DB_CONFIG['host'],
+    $DB_CONFIG['database'],
+    $DB_CONFIG['username'],
+    $DB_CONFIG['password'],
+    $jwtSecret
+);
+
+// --------------------------------------------------------------------------
+// CORS : origines autorisees (pas de wildcard). Origin vide/absent autorise
+// (clients natifs, Timer desktop Electron, Postman, serveur-a-serveur).
+// --------------------------------------------------------------------------
+$TIMER_CORS_ORIGINS = [
+    'https://dashboard.soreva.app',
+    'https://project.soreva.app',
+    'https://facture.soreva.app',
+    'https://timer.soreva.app',
+];
+$extraOrigins = $TIMER_SECRETS['timer_cors_origins'] ?? null;
+if (is_array($extraOrigins)) {
+    $TIMER_CORS_ORIGINS = array_values(array_unique(array_merge($TIMER_CORS_ORIGINS, $extraOrigins)));
+}
+$envOrigins = getenv('TIMER_CORS_ORIGINS');
+if ($envOrigins !== false && $envOrigins !== '') {
+    $parsed = array_map('trim', explode(',', $envOrigins));
+    $TIMER_CORS_ORIGINS = array_values(array_unique(array_merge($TIMER_CORS_ORIGINS, $parsed)));
+}
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$origin = trim($origin);
+header('Vary: Origin');
+// Ne rejeter que si Origin est present et non autorise (clients sans Origin OK)
+if ($origin !== '') {
+    if (!in_array($origin, $TIMER_CORS_ORIGINS, true)) {
+        timer_fail('Accès non autorisé', 403);
+    }
+    header('Access-Control-Allow-Origin: ' . $origin);
+}
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
+// --------------------------------------------------------------------------
+// En-têtes de sécurité (X-Content-Type-Options, Referrer-Policy)
+// --------------------------------------------------------------------------
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: no-referrer');
+
+// --------------------------------------------------------------------------
+// Connexion PDO locale (pour les requetes metier Timer)
+// --------------------------------------------------------------------------
 function getConnection() {
     global $DB_CONFIG;
     try {
@@ -42,277 +180,319 @@ function getConnection() {
                 PDO::ATTR_EMULATE_PREPARES => false
             ]
         );
-        
-        // Configurer MySQL pour le timezone français (avec repli si indisponible)
-        $timeZoneConfigured = false;
+
         $mysqlTimeZone = 'Europe/Paris';
         $fallbackOffset = '+01:00';
-
         try {
             $result = $pdo->query("SELECT CONVERT_TZ('2000-01-01 00:00:00', 'UTC', " . $pdo->quote($mysqlTimeZone) . ')');
             if ($result !== false && $result->fetchColumn() !== false) {
                 $pdo->exec('SET time_zone = ' . $pdo->quote($mysqlTimeZone));
-                $timeZoneConfigured = true;
+            } else {
+                $pdo->exec("SET time_zone = '$fallbackOffset'");
             }
         } catch (PDOException $tzException) {
-            error_log('Warning: MySQL timezone Europe/Paris unavailable: ' . $tzException->getMessage());
+            try { $pdo->exec("SET time_zone = '$fallbackOffset'"); } catch (PDOException $e) {}
         }
 
-        if (!$timeZoneConfigured) {
-            try {
-                $pdo->exec("SET time_zone = '$fallbackOffset'");
-                $timeZoneConfigured = true;
-                error_log("Warning: MySQL timezone Europe/Paris not set, fallback to $fallbackOffset");
-            } catch (PDOException $fallbackException) {
-                error_log('Warning: MySQL timezone fallback failed: ' . $fallbackException->getMessage());
-            }
-        }
         return $pdo;
     } catch (PDOException $e) {
-        http_response_code(500);
-        error_log('Database connection error: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Erreur de connexion base de données']);
-        exit();
+        timer_log('Database connection error: ' . $e->getMessage());
+        timer_fail('Erreur de connexion base de données', 500);
     }
 }
 
-// Fonction pour valider le JWT
-function validateToken($token) {
-    global $JWT_SECRET;
-    $parts = explode('.', $token);
-    if (count($parts) !== 3) return false;
+// --------------------------------------------------------------------------
+// Helpers : extraction token + resolution du profil timer_freelances
+// --------------------------------------------------------------------------
 
-    [$headerB64, $payloadB64, $signatureProvided] = $parts;
-
-    // Décoder avec validation stricte pour éviter les payloads corrompus
-    $header = json_decode(base64_decode($headerB64, true), true);
-    $payload = json_decode(base64_decode($payloadB64, true), true);
-    if (!$header || !$payload || !isset($payload['freelance_id'])) return false;
-
-    // Recalculer la signature en HMAC-SHA256 sur header.payload (compatibilité avec createToken)
-    $expectedSignature = base64_encode(hash_hmac('sha256', "$headerB64.$payloadB64", $JWT_SECRET, true));
-
-    // Comparaison timing-safe
-    if (!hash_equals($expectedSignature, $signatureProvided)) return false;
-
-    if (isset($payload['exp']) && $payload['exp'] < time()) return false;
-
-    return $payload['freelance_id'];
+/**
+ * Valide le JWT via CoreAuthService et retourne le payload ['sub', 'org_id', ...] ou null.
+ */
+function extractCorePayload(string $token): ?array {
+    return CoreAuthService::validateToken($token);
 }
 
-// Fonction pour créer un JWT
-function createToken($freelanceId) {
-    global $JWT_SECRET;
-    $header = base64_encode(json_encode(['typ' => 'JWT', 'alg' => 'HS256']));
-    $payload = base64_encode(json_encode([
-        'freelance_id' => $freelanceId,
-        'exp' => time() + (24 * 60 * 60)
-    ]));
-    
-    $signature = base64_encode(hash_hmac('sha256', "$header.$payload", $JWT_SECRET, true));
-    return "$header.$payload.$signature";
+/**
+ * Resout le profil timer_freelances pour un core_user_id + org_id.
+ * Cree le profil automatiquement s'il n'existe pas encore.
+ */
+function resolveFreelanceProfile(PDO $pdo, string $coreUserId, string $orgId): ?array {
+    $stmt = $pdo->prepare(
+        'SELECT id, name, email, status FROM timer_freelances WHERE core_user_id = ? AND org_id = ? LIMIT 1'
+    );
+    $stmt->execute([$coreUserId, $orgId]);
+    $freelance = $stmt->fetch();
+
+    if ($freelance) {
+        return $freelance;
+    }
+
+    // Auto-creation du profil a partir de core_users
+    $coreUser = CoreAuthService::getUser($coreUserId);
+    if (!$coreUser) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO timer_freelances (org_id, core_user_id, email, name, status) VALUES (?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([
+        $orgId,
+        $coreUserId,
+        $coreUser['email'] ?? '',
+        $coreUser['email'] ?? 'Utilisateur',
+        'active'
+    ]);
+
+    return [
+        'id' => $pdo->lastInsertId(),
+        'name' => $coreUser['email'] ?? 'Utilisateur',
+        'email' => $coreUser['email'] ?? '',
+        'status' => 'active'
+    ];
 }
 
+// --------------------------------------------------------------------------
+// Routeur
+// --------------------------------------------------------------------------
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Debug pour voir les requêtes reçues
-error_log("DEBUG REQUETE - Action: $action, Method: $method");
+$token = getBearerToken();
 
-// Extraction du token JWT depuis le header Authorization
-$authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-$token = '';
-if (preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
-    $token = $matches[1];
+// Variables globales de session (peuplees apres validation du token)
+$coreUserId = null;
+$orgId = null;
+$freelanceId = null;
+
+if ($token) {
+    $payload = extractCorePayload($token);
+    if ($payload) {
+        $coreUserId = $payload['sub'] ?? null;
+        $orgId = $payload['org_id'] ?? null;
+    }
 }
 
-$freelanceId = $token ? validateToken($token) : false;
-
-// Route de login
+// ======================= ROUTE : LOGIN =======================
 if ($action === 'login' && $method === 'POST') {
-    $input = json_decode(file_get_contents('php://input'), true);
-    
-    if (!isset($input['username']) || !isset($input['password'])) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'Username et password requis']);
-        exit();
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $input === null)) {
+        timer_fail('JSON invalide', 400);
     }
-    
+
+    // Accepter email ou username (retrocompatibilite)
+    $email = $input['email'] ?? $input['username'] ?? null;
+    $password = $input['password'] ?? null;
+
+    if (!$email || !$password) {
+        timer_fail('Email et mot de passe requis', 400);
+    }
+
+    // Authentification via CoreAuthService
+    $authResult = CoreAuthService::authenticate($email, $password);
+    if (!$authResult) {
+        timer_fail('Identifiants invalides', 401);
+    }
+
+    $coreUserId = $authResult['core_user_id'];
+    $orgId = $authResult['org_id'];
+    $coreToken = $authResult['token'];
+
+    // Verifier l'entitlement TIMER pour cette organisation
+    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+        timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
+    }
+
+    // Resoudre ou creer le profil timer_freelances
     $pdo = getConnection();
-    
-    // Authentication with bcrypt support (and legacy SHA-256 fallback)
-    $stmt = $pdo->prepare('SELECT id, username, email, name, password_hash FROM freelances WHERE username = ? AND status = "active" LIMIT 1');
-    $stmt->execute([$input['username']]);
-    $freelance = $stmt->fetch();
-
+    $freelance = resolveFreelanceProfile($pdo, $coreUserId, $orgId);
     if (!$freelance) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Identifiants invalides']);
-        exit();
+        timer_fail('Impossible de créer le profil Timer', 500);
     }
 
-    $storedHash = $freelance['password_hash'] ?? '';
-    $passwordValid = false;
-
-    // Detect bcrypt ($2a$, $2y$, $2b$)
-    $isBcrypt = is_string($storedHash) && preg_match('/^\$2[aby]\$/', $storedHash) === 1;
-
-    if ($isBcrypt) {
-        // Verify against bcrypt hash
-        $passwordValid = password_verify($input['password'], $storedHash);
-    } else {
-        // Legacy fallback: compare SHA-256
-        $passwordValid = hash('sha256', $input['password']) === $storedHash;
-
-        // Optional migration to bcrypt when legacy matches
-        if ($passwordValid) {
-            try {
-                $newHash = password_hash($input['password'], PASSWORD_BCRYPT);
-                if ($newHash) {
-                    $upd = $pdo->prepare('UPDATE freelances SET password_hash = ? WHERE id = ?');
-                    $upd->execute([$newHash, $freelance['id']]);
-                    $storedHash = $newHash;
-                }
-            } catch (Exception $e) {
-                // Ignore migration errors silently
-            }
-        }
-    }
-
-    if (!$passwordValid) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Identifiants invalides']);
-        exit();
-    }
-    
-    $token = createToken($freelance['id']);
-    
-    echo json_encode([
+    timer_json([
         'success' => true,
-        'token' => $token,
+        'token' => $coreToken,
         'freelance_id' => $freelance['id'],
         'freelance_name' => $freelance['name'],
-        'expires_at' => date('c', time() + (24 * 60 * 60))
-    ]);
-    exit();
+        'core_user_id' => $coreUserId,
+        'org_id' => $orgId,
+        'expires_at' => jwt_expires_at($coreToken) ?? date('c', time() + (24 * 60 * 60))
+    ], 200);
 }
 
-// Vérifier la validité du token
+// ======================= ROUTE : VERIFY =======================
 if ($action === 'verify' && $method === 'GET') {
-    if (!$freelanceId) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
-        exit();
+    if (!$coreUserId || !$orgId) {
+        timer_fail('Token manquant ou invalide', 401);
+    }
+    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+        timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 
-    $payload = [];
-    $parts = explode('.', $token);
-    if (count($parts) === 3) {
-        $payload = json_decode(base64_decode($parts[1], true), true) ?? [];
-    }
+    $pdo = getConnection();
+    $freelance = resolveFreelanceProfile($pdo, $coreUserId, $orgId);
 
-    $expiresAt = isset($payload['exp']) ? date('c', $payload['exp']) : null;
+    $expiresAt = jwt_expires_at($token);
 
-    echo json_encode([
+    timer_json([
         'success' => true,
-        'freelance_id' => $freelanceId,
+        'freelance_id' => $freelance ? $freelance['id'] : null,
+        'core_user_id' => $coreUserId,
+        'org_id' => $orgId,
         'expires_at' => $expiresAt
-    ]);
-    exit();
+    ], 200);
 }
 
-// Rafraîchir le token JWT
+// ======================= ROUTE : REFRESH =======================
 if ($action === 'refresh' && $method === 'POST') {
-    if (!$freelanceId) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
-        exit();
+    if (!$coreUserId || !$orgId) {
+        timer_fail('Token manquant ou invalide', 401);
+    }
+    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+        timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 
-    $newToken = createToken($freelanceId);
+    $newToken = CoreAuthService::createToken($coreUserId, $orgId);
 
-    echo json_encode([
+    $pdo = getConnection();
+    $freelance = resolveFreelanceProfile($pdo, $coreUserId, $orgId);
+
+    timer_json([
         'success' => true,
         'token' => $newToken,
-        'freelance_id' => $freelanceId,
-        'expires_at' => date('c', time() + (24 * 60 * 60))
-    ]);
-    exit();
+        'freelance_id' => $freelance ? $freelance['id'] : null,
+        'core_user_id' => $coreUserId,
+        'org_id' => $orgId,
+        'expires_at' => jwt_expires_at($newToken) ?? date('c', time() + (24 * 60 * 60))
+    ], 200);
 }
 
-// Health check
+// ======================= ROUTE : HEALTH =======================
 if ($action === 'health' && $method === 'GET') {
-    echo json_encode([
+    timer_json([
         'status' => 'ok',
-        'version' => '1.0.0',
+        'version' => '2.0.0',
+        'auth' => 'CoreAuthService',
+        'database' => 'soreva_full',
         'timestamp' => date('c')
-    ]);
-    exit();
+    ], 200);
 }
 
-// Vérification du token pour les routes protégées
-if (!$freelanceId && !in_array($action, ['health', 'login'])) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'message' => 'Token manquant ou invalide']);
-    exit();
-}
-
-// Charger les projets (GET) - VERSION COMPLETE
-if ($action === 'projects' && $method === 'GET') {
-    if (!$freelanceId) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'FreelanceId manquant']);
-        exit();
+// ======================= GUARD : routes protegees =======================
+if (!$coreUserId || !$orgId) {
+    if (!in_array($action, ['health', 'login'])) {
+        timer_fail('Token manquant ou invalide', 401);
     }
-    
+}
+if ($coreUserId && $orgId && !in_array($action, ['health', 'login'])) {
+    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+        timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
+    }
+}
+
+// Resoudre le freelance pour toutes les routes protegees
+$pdo = getConnection();
+$freelanceProfile = resolveFreelanceProfile($pdo, $coreUserId, $orgId);
+if (!$freelanceProfile) {
+    timer_fail('Profil Timer introuvable', 500);
+}
+$freelanceId = $freelanceProfile['id'];
+
+// ======================= ROUTE : GET CLIENTS =======================
+// Même source que Facture et Project Tracker (facture_clients) pour afficher les mêmes clients.
+if ($action === 'clients' && $method === 'GET') {
     try {
-        $pdo = getConnection();
-        
-        // Charger les projets du freelance
-        $stmt = $pdo->prepare("SELECT * FROM projects WHERE freelance_id = ? ORDER BY created_at DESC");
-        $stmt->execute([$freelanceId]);
+        $stmt = $pdo->prepare(
+            'SELECT id, name, company FROM facture_clients WHERE org_id = ? ORDER BY name ASC'
+        );
+        $stmt->execute([$orgId]);
+        $rows = $stmt->fetchAll();
+        $list = array_map(function ($r) {
+            return [
+                'id' => (int) $r['id'],
+                'name' => $r['name'] ?? '',
+                'company' => $r['company'] ?? ''
+            ];
+        }, $rows);
+        timer_json(['success' => true, 'data' => $list]);
+    } catch (Exception $e) {
+        timer_log('Erreur chargement clients: ' . $e->getMessage());
+        timer_fail('Erreur chargement clients', 500);
+    }
+}
+
+// ======================= ROUTE : GET PROJECTS =======================
+if ($action === 'projects' && $method === 'GET') {
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT * FROM timer_projects WHERE freelance_id = ? AND org_id = ? ORDER BY created_at DESC'
+        );
+        $stmt->execute([$freelanceId, $orgId]);
         $projects = $stmt->fetchAll();
-        
+
         $formattedProjects = [];
-        
+
         foreach ($projects as $project) {
-            // Récupérer le nom du client
             $clientName = '';
             $clientCompany = '';
-            if (!empty($project['client_id'])) {
-                $clientStmt = $pdo->prepare('SELECT name, company FROM clients WHERE id = ?');
-                $clientStmt->execute([$project['client_id']]);
+            if (!empty($project['facture_client_id'])) {
+                $clientStmt = $pdo->prepare('SELECT name, company FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+                $clientStmt->execute([$project['facture_client_id'], $orgId]);
                 $client = $clientStmt->fetch();
                 if ($client) {
                     $clientName = $client['name'] ?? '';
                     $clientCompany = $client['company'] ?? '';
                 }
             }
-            
-            // Récupérer les sessions de travail avec les VRAIS noms de colonnes
-            $logsStmt = $pdo->prepare('SELECT * FROM project_logs WHERE project_id = ? ORDER BY sync_timestamp ASC');
-            $logsStmt->execute([$project['id']]);
+            if ($clientName === '' && !empty($project['client_id'])) {
+                $clientStmt = $pdo->prepare('SELECT name, company FROM timer_clients WHERE id = ? AND org_id = ? LIMIT 1');
+                $clientStmt->execute([$project['client_id'], $orgId]);
+                $client = $clientStmt->fetch();
+                if ($client) {
+                    $clientName = $client['name'] ?? '';
+                    $clientCompany = $client['company'] ?? '';
+                }
+            }
+
+            $logsStmt = $pdo->prepare(
+                'SELECT * FROM timer_project_logs WHERE project_id = ? AND org_id = ? ORDER BY sync_timestamp ASC'
+            );
+            $logsStmt->execute([$project['id'], $orgId]);
             $logs = $logsStmt->fetchAll();
-            
+
             $workSessions = [];
             $usedTime = 0;
-            
+
             foreach ($logs as $log) {
                 $duration = intval($log['duration_seconds'] ?? 0);
                 $usedTime += $duration;
-                
+
                 $workSessions[] = [
                     'id' => 'session-' . $log['id'],
                     'subject' => $log['description'] ?? '',
                     'startTime' => $log['session_start'],
                     'endTime' => $log['session_end'],
                     'duration' => $duration,
-                    'date' => !empty($log['session_date']) ? $log['session_date'] : ($log['session_start'] ? date('Y-m-d', strtotime($log['session_start'])) : date('Y-m-d'))
+                    'date' => !empty($log['session_date'])
+                        ? $log['session_date']
+                        : ($log['session_start'] ? date('Y-m-d', strtotime($log['session_start'])) : date('Y-m-d'))
                 ];
             }
-            
-            $currentTime = isset($project['current_time']) ? intval($project['current_time']) : $usedTime;
-            $status = isset($project['status']) ? $project['status'] : 'active';
+
+            // current_time en base = temps déjà utilisé (secondes)
+            $currentTimeFromDb = $project['current_time'] ?? null;
+            if ($currentTimeFromDb === null) {
+                foreach (array_keys($project) as $k) {
+                    if (strtolower($k) === 'current_time') {
+                        $currentTimeFromDb = $project[$k];
+                        break;
+                    }
+                }
+            }
+            $currentTime = intval($currentTimeFromDb ?? $usedTime);
+            $status = $project['status'] ?? 'active';
 
             $formattedProjects[] = [
                 'id' => $project['project_uuid'] ?? $project['id'],
@@ -331,331 +511,164 @@ if ($action === 'projects' && $method === 'GET') {
                 'sessionStartTime' => null
             ];
         }
-        
-        echo json_encode([
-            'success' => true,
-            'data' => $formattedProjects
-        ]);
-        
+
+        timer_json(['success' => true, 'data' => $formattedProjects]);
     } catch (Exception $e) {
-        http_response_code(500);
-        error_log('Erreur chargement projets: ' . $e->getMessage());
-        echo json_encode([
-            'success' => false,
-            'message' => 'Erreur chargement'
-        ]);
+        timer_log('Erreur chargement projets: ' . $e->getMessage());
+        timer_fail('Erreur chargement', 500);
     }
-    exit();
 }
 
-// SAUVEGARDE PROJET - STRUCTURE CORRECTE (compatibilité save-project)
+// ======================= ROUTE : SAVE PROJECT (POST) =======================
 if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
     $projectData = json_decode($rawInput, true);
-    
-    if (!$projectData || !isset($projectData['name'])) {
-        echo json_encode(['success' => false, 'message' => 'Nom du projet manquant']);
-        exit();
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $projectData === null)) {
+        timer_fail('JSON invalide', 400);
     }
-    
+
+    if (!$projectData || !isset($projectData['name'])) {
+        timer_fail('Nom du projet manquant', 400);
+    }
+
     try {
-        $pdo = getConnection();
-
-        // ÉTAPE 1: Créer ou récupérer un client avec DEBUG
+        // ETAPE 1 : Client partagé (facture_clients, même que Facture et Project Tracker)
         $clientName = $projectData['clientName'] ?? $projectData['client'] ?? 'Client par défaut';
+        $clientIdFromFront = isset($projectData['clientId']) ? (int) $projectData['clientId'] : 0;
+        $factureClientId = null;
 
-        // Vérifier la présence des colonnes timer (gérées via migration dédiée)
-        $columnsStmt = $pdo->query("SHOW COLUMNS FROM projects");
-        $existingColumns = $columnsStmt->fetchAll(PDO::FETCH_COLUMN);
-        $hasCurrentTimeColumn = in_array('current_time', $existingColumns);
-        $hasStatusColumn = in_array('status', $existingColumns);
-
-        if (!$hasCurrentTimeColumn || !$hasStatusColumn) {
-            error_log('Projects table missing timer columns. Run the dedicated migration to add current_time and status.');
-        }
-
-        // Vérifier dynamiquement si la colonne client_id existe (schema OVH historique)
-        $clientColumnsStmt = $pdo->query("SHOW COLUMNS FROM clients");
-        $clientColumns = $clientColumnsStmt->fetchAll(PDO::FETCH_COLUMN);
-        $hasClientSlugColumn = in_array('client_id', $clientColumns);
-
-        // Debug: afficher les données reçues
-        error_log("DEBUG CLIENT - Données reçues: " . json_encode($projectData));
-        error_log("DEBUG CLIENT - Nom client extrait: " . $clientName);
-        error_log("DEBUG CLIENT - Freelance ID: " . $freelanceId);
-        error_log("DEBUG CLIENT - Colonne client_id présente: " . ($hasClientSlugColumn ? 'OUI' : 'NON'));
-
-        // Chercher un client existant
-        $stmt = $pdo->prepare('SELECT id FROM clients WHERE freelance_id = ? AND name = ?');
-        $stmt->execute([$freelanceId, $clientName]);
-        $client = $stmt->fetch();
-        error_log("DEBUG CLIENT - Client existant trouvé: " . ($client ? "OUI (ID: " . $client['id'] . ")" : "NON"));
-
-        if (!$client) {
-            // Créer un nouveau client
-            $clientSlug = strtolower(str_replace(' ', '_', $clientName));
-            error_log("DEBUG CLIENT - Création nouveau client: " . $clientName . " (slug: " . $clientSlug . ")");
-
-            if ($hasClientSlugColumn) {
-                $stmt = $pdo->prepare('INSERT INTO clients (freelance_id, client_id, name, company) VALUES (?, ?, ?, ?)');
-                $stmt->execute([
-                    $freelanceId,
-                    $clientSlug,
-                    $clientName,
-                    $projectData['company'] ?? ''
-                ]);
-            } else {
-                // Schéma sans colonne client_id
-                $stmt = $pdo->prepare('INSERT INTO clients (freelance_id, name, company) VALUES (?, ?, ?)');
-                $stmt->execute([
-                    $freelanceId,
-                    $clientName,
-                    $projectData['company'] ?? ''
-                ]);
+        if ($clientIdFromFront > 0) {
+            $stmt = $pdo->prepare('SELECT id FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+            $stmt->execute([$clientIdFromFront, $orgId]);
+            if ($stmt->fetch()) {
+                $factureClientId = $clientIdFromFront;
             }
+        }
+        if ($factureClientId === null && $clientName !== '') {
+            $stmt = $pdo->prepare('SELECT id FROM facture_clients WHERE org_id = ? AND name = ? LIMIT 1');
+            $stmt->execute([$orgId, $clientName]);
+            $row = $stmt->fetch();
+            if ($row) {
+                $factureClientId = (int) $row['id'];
+            } else {
+                $stmt = $pdo->prepare(
+                    'INSERT INTO facture_clients (org_id, name, company, email, phone, address) VALUES (?, ?, ?, NULL, NULL, NULL)'
+                );
+                $stmt->execute([$orgId, $clientName, $projectData['company'] ?? '']);
+                $factureClientId = (int) $pdo->lastInsertId();
+            }
+        }
 
-            $clientId = $pdo->lastInsertId();
-            error_log("DEBUG CLIENT - Client créé avec ID: " . $clientId);
-        } else {
-            $clientId = $client['id'];
-            error_log("DEBUG CLIENT - Utilisation client existant ID: " . $clientId);
-        }
-        
-        // Vérification finale
-        if (!$clientId) {
-            throw new Exception("ERREUR: client_id est toujours null après création/récupération");
-        }
-        
-        // ÉTAPE 2: Vérifier si le projet existe déjà (ou générer un UUID s'il est manquant)
+        // ETAPE 2 : Creer ou mettre a jour le projet
         $projectUuid = $projectData['id'] ?? null;
         if (empty($projectUuid)) {
-            $projectUuid = uniqid('proj_', true);
-            $projectData['id'] = $projectUuid; // Préserver pour le retour frontend
+            $projectUuid = 'proj_' . bin2hex(random_bytes(16));
+            $projectData['id'] = $projectUuid;
         }
 
-        $stmt = $pdo->prepare('SELECT id FROM projects WHERE project_uuid = ? AND freelance_id = ?');
-        $stmt->execute([$projectUuid, $freelanceId]);
+        $stmt = $pdo->prepare('SELECT id FROM timer_projects WHERE project_uuid = ? AND freelance_id = ? AND org_id = ?');
+        $stmt->execute([$projectUuid, $freelanceId, $orgId]);
         $existingProject = $stmt->fetch();
-        
+
         $currentTime = isset($projectData['currentTime']) ? intval($projectData['currentTime']) : 0;
         $status = $projectData['status'] ?? 'active';
 
         if ($existingProject) {
-            // UPDATE du projet existant
-            $updateFields = [
-                'client_id = ?',
-                'name = ?',
-                'description = ?',
-                'total_time_allocated = ?',
-                'hourly_rate = ?'
-            ];
-            $updateValues = [
-                $clientId,
+            $stmt = $pdo->prepare(
+                'UPDATE timer_projects SET
+                    facture_client_id = ?,
+                    client_id = NULL,
+                    name = ?,
+                    description = ?,
+                    total_time_allocated = ?,
+                    hourly_rate = ?,
+                    `current_time` = ?,
+                    status = ?,
+                    last_activity = NOW(),
+                    updated_at = NOW()
+                WHERE id = ? AND freelance_id = ? AND org_id = ?'
+            );
+            $stmt->execute([
+                $factureClientId,
                 $projectData['name'],
                 $projectData['description'] ?? '',
                 $projectData['totalTime'] ?? 0,
-                $projectData['hourlyRate'] ?? 0
-            ];
-
-            if ($hasCurrentTimeColumn) {
-                $updateFields[] = 'current_time = ?';
-                $updateValues[] = $currentTime;
-            }
-
-            if ($hasStatusColumn) {
-                $updateFields[] = 'status = ?';
-                $updateValues[] = $status;
-            }
-
-            $updateFields[] = 'last_activity = NOW()';
-            $updateFields[] = 'updated_at = NOW()';
-
-            $updateValues[] = $existingProject['id'];
-            $updateValues[] = $freelanceId;
-
-            $updateSql = 'UPDATE projects SET ' . implode(",\n                ", $updateFields) . ' WHERE id = ? AND freelance_id = ?';
-            $stmt = $pdo->prepare($updateSql);
-            $stmt->execute($updateValues);
+                $projectData['hourlyRate'] ?? 0,
+                $currentTime,
+                $status,
+                $existingProject['id'],
+                $freelanceId,
+                $orgId
+            ]);
             $projectId = $existingProject['id'];
         } else {
-            // INSERT nouveau projet
-            $insertColumns = [
-                'freelance_id',
-                'client_id',
-                'project_uuid',
-                'name',
-                'description',
-                'project_type',
-                'total_time_allocated',
-                'hourly_rate'
-            ];
-
-            $insertValues = [
+            $stmt = $pdo->prepare(
+                'INSERT INTO timer_projects (
+                    org_id, core_user_id, freelance_id, facture_client_id, client_id, project_uuid,
+                    name, description, project_type, total_time_allocated,
+                    `current_time`, status, hourly_rate, start_date, end_date,
+                    last_activity, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
+            );
+            $stmt->execute([
+                $orgId,
+                $coreUserId,
                 $freelanceId,
-                $clientId,
+                $factureClientId,
                 $projectUuid,
                 $projectData['name'],
                 $projectData['description'] ?? '',
                 'timer',
                 $projectData['totalTime'] ?? 0,
-                $projectData['hourlyRate'] ?? 0
-            ];
-
-            if ($hasCurrentTimeColumn) {
-                $insertColumns[] = 'current_time';
-                $insertValues[] = $currentTime;
-            }
-
-            if ($hasStatusColumn) {
-                $insertColumns[] = 'status';
-                $insertValues[] = $status;
-            }
-
-            $insertColumns = array_merge($insertColumns, [
-                'start_date',
-                'end_date',
-                'last_activity',
-                'created_at',
-                'updated_at'
-            ]);
-
-            $insertValues = array_merge($insertValues, [
+                $currentTime,
+                $status,
+                $projectData['hourlyRate'] ?? 0,
                 null,
                 null,
                 $currentTime > 0 ? date('Y-m-d H:i:s') : null
             ]);
-
-            $placeholders = array_fill(0, count($insertColumns) - 2, '?');
-            $placeholders[] = 'NOW()';
-            $placeholders[] = 'NOW()';
-
-            $insertSql = 'INSERT INTO projects (' . implode(', ', $insertColumns) . ') VALUES (' . implode(', ', $placeholders) . ')';
-            $stmt = $pdo->prepare($insertSql);
-            $stmt->execute($insertValues);
             $projectId = $pdo->lastInsertId();
         }
-        
-        // ÉTAPE 3: Sauvegarder les sessions de travail
+
+        // ETAPE 3 : Sauvegarder les sessions de travail
         if (isset($projectData['workSessions']) && is_array($projectData['workSessions'])) {
-            // Supprimer les anciens logs pour ce projet
-            $stmt = $pdo->prepare('DELETE FROM project_logs WHERE project_id = ?');
-            $stmt->execute([$projectId]);
-            
-            // Insérer les nouvelles sessions
+            $stmt = $pdo->prepare('DELETE FROM timer_project_logs WHERE project_id = ? AND org_id = ?');
+            $stmt->execute([$projectId, $orgId]);
+
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO timer_project_logs (
+                    org_id, core_user_id, project_id,
+                    session_start, session_end, session_date,
+                    duration_seconds, description, task_type, is_billable, sync_timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())'
+            );
+
             foreach ($projectData['workSessions'] as $session) {
                 if (isset($session['duration']) && $session['duration'] > 0) {
-                    // Préserver la date originale de la session pour éviter les problèmes de timezone
                     $sessionDate = null;
                     if (!empty($session['date'])) {
-                        $sessionDate = $session['date']; // Préserver la date originale
-                    } else if (!empty($session['startTime'])) {
-                        // Si pas de date, la calculer depuis startTime
+                        $sessionDate = $session['date'];
+                    } elseif (!empty($session['startTime'])) {
                         $sessionDate = date('Y-m-d', strtotime($session['startTime']));
                     } else {
-                        $sessionDate = date('Y-m-d'); // Fallback
+                        $sessionDate = date('Y-m-d');
                     }
-                    
-                    // Vérifier d'abord si la colonne session_date existe
-                    $checkStmt = $pdo->query("SHOW COLUMNS FROM project_logs LIKE 'session_date'");
-                    $hasSessionDateColumn = $checkStmt->rowCount() > 0;
-                    
-                    if ($hasSessionDateColumn) {
-                        // Utiliser la requête avec session_date
-                        $stmt = $pdo->prepare('INSERT INTO project_logs (
-                            project_id, 
-                            session_start, 
-                            session_end, 
-                            duration_seconds, 
-                            description, 
-                            task_type,
-                            is_billable,
-                            session_date,
-                            sync_timestamp
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-                    } else {
-                        // Fallback sans session_date
-                        $stmt = $pdo->prepare('INSERT INTO project_logs (
-                            project_id, 
-                            session_start, 
-                            session_end, 
-                            duration_seconds, 
-                            description, 
-                            task_type,
-                            is_billable,
-                            sync_timestamp
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
-                    }
-                    
-                    // Convertir les timestamps JavaScript en format MySQL
-                    $startTime = null;
-                    $endTime = null;
-                    
-                    if (!empty($session['startTime'])) {
-                        $startTime = date('Y-m-d H:i:s', strtotime($session['startTime']));
-                    }
-                    
-                    if (!empty($session['endTime'])) {
-                        $endTime = date('Y-m-d H:i:s', strtotime($session['endTime']));
-                    }
-                    
-                    error_log("DEBUG SESSION - Insertion: projectId=$projectId, startTime=$startTime, endTime=$endTime, duration=" . ($session['duration'] ?? 0) . ", subject=" . ($session['subject'] ?? '') . ", sessionDate=$sessionDate");
-                    
-                    try {
-                        if ($hasSessionDateColumn) {
-                            $stmt->execute([
-                                $projectId,
-                                $startTime,
-                                $endTime,
-                                $session['duration'] ?? 0,
-                                $session['subject'] ?? '',
-                                'maintenance',  // task_type par défaut
-                                1,              // is_billable = true par défaut
-                                $sessionDate    // Stocker la date originale
-                            ]);
-                            error_log("DEBUG SESSION - Insertion avec session_date réussie: " . ($session['subject'] ?? '') . " -> " . $sessionDate);
-                        } else {
-                            $stmt->execute([
-                                $projectId,
-                                $startTime,
-                                $endTime,
-                                $session['duration'] ?? 0,
-                                $session['subject'] ?? '',
-                                'maintenance',  // task_type par défaut
-                                1               // is_billable = true par défaut
-                            ]);
-                            error_log("DEBUG SESSION - Insertion sans session_date réussie: " . ($session['subject'] ?? ''));
-                        }
-                    } catch (Exception $e) {
-                        error_log("ERREUR SESSION - Échec insertion: " . $e->getMessage());
-                        error_log("ERREUR SESSION - hasSessionDateColumn: " . ($hasSessionDateColumn ? 'true' : 'false'));
-                        
-                        // Dernier fallback
-                        try {
-                            $stmtFallback = $pdo->prepare('INSERT INTO project_logs (
-                                project_id, 
-                                session_start, 
-                                session_end, 
-                                duration_seconds, 
-                                description, 
-                                task_type,
-                                is_billable,
-                                sync_timestamp
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
-                            
-                            $stmtFallback->execute([
-                                $projectId,
-                                $startTime,
-                                $endTime,
-                                $session['duration'] ?? 0,
-                                $session['subject'] ?? '',
-                                'maintenance',
-                                1
-                            ]);
-                            error_log("DEBUG SESSION - Fallback final réussi");
-                        } catch (Exception $e2) {
-                            error_log("ERREUR SESSION - Échec fallback: " . $e2->getMessage());
-                        }
-                    }
+
+                    $startTime = !empty($session['startTime']) ? date('Y-m-d H:i:s', strtotime($session['startTime'])) : null;
+                    $endTime = !empty($session['endTime']) ? date('Y-m-d H:i:s', strtotime($session['endTime'])) : null;
+
+                    $insertStmt->execute([
+                        $orgId,
+                        $coreUserId,
+                        $projectId,
+                        $startTime,
+                        $endTime,
+                        $sessionDate,
+                        $session['duration'] ?? 0,
+                        $session['subject'] ?? '',
+                        'maintenance',
+                        1
+                    ]);
                 }
             }
         }
@@ -670,64 +683,64 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
             'freelance_id' => $freelanceId
         ];
 
-        echo json_encode([
+        timer_json([
             'success' => true,
             'message' => 'Projet sauvegardé avec succès',
             'project_id' => $projectId,
             'project_uuid' => $projectUuid,
             'currentTime' => $currentTime,
             'status' => $status,
-            'data' => [
-                'project' => $savedProject
-            ]
+            'data' => ['project' => $savedProject]
         ]);
-        
     } catch (Exception $e) {
-        error_log('ERREUR SQL sauvegarde projet: ' . $e->getMessage());
-        echo json_encode([
-            'success' => false,
-            'message' => 'Erreur lors de la sauvegarde du projet'
-        ]);
+        timer_log('ERREUR SQL sauvegarde projet: ' . $e->getMessage());
+        timer_fail('Erreur lors de la sauvegarde du projet', 500);
     }
-    exit();
 }
 
-// Supprimer un projet (DELETE)
+// ======================= ROUTE : DELETE PROJECT =======================
 if ($action === 'projects' && $method === 'DELETE') {
-    error_log("DEBUG DELETE - Route DELETE atteinte");
     $rawInput = file_get_contents('php://input');
-    error_log("DEBUG DELETE - Raw input: " . $rawInput);
     $projectData = json_decode($rawInput, true);
-    error_log("DEBUG DELETE - Project data: " . json_encode($projectData));
-    
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $projectData === null)) {
+        timer_fail('JSON invalide', 400);
+    }
+
     if (!$projectData || !isset($projectData['id'])) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'ID du projet manquant']);
-        exit();
+        timer_fail('ID du projet manquant', 400);
     }
-    
+
+    $id = $projectData['id'];
+    $isNumeric = is_numeric($id) && (is_int($id) || ctype_digit((string) $id));
+    $isProjectUuid = is_string($id) && preg_match('/^proj_[a-f0-9]{32}$/i', $id);
+
+    if (!$isNumeric && !$isProjectUuid) {
+        timer_fail('ID du projet invalide', 400);
+    }
+
     try {
-        $pdo = getConnection();
-        
-        // Supprimer le projet
-        $stmt = $pdo->prepare('DELETE FROM projects WHERE freelance_id = ? AND (project_uuid = ? OR name = ?)');
-        $stmt->execute([$freelanceId, $projectData['id'], $projectData['id']]);
-        
-        if ($stmt->rowCount() > 0) {
-            echo json_encode(['success' => true, 'message' => 'Projet supprimé']);
+        if ($isNumeric) {
+            $stmt = $pdo->prepare(
+                'DELETE FROM timer_projects WHERE freelance_id = ? AND org_id = ? AND id = ?'
+            );
+            $stmt->execute([$freelanceId, $orgId, (int) $id]);
         } else {
-            echo json_encode(['success' => false, 'message' => 'Projet non trouvé']);
+            $stmt = $pdo->prepare(
+                'DELETE FROM timer_projects WHERE freelance_id = ? AND org_id = ? AND project_uuid = ?'
+            );
+            $stmt->execute([$freelanceId, $orgId, $id]);
         }
-        
+
+        if ($stmt->rowCount() > 0) {
+            timer_json(['success' => true, 'message' => 'Projet supprimé']);
+        } else {
+            timer_fail('Projet non trouvé', 404);
+        }
     } catch (Exception $e) {
-        http_response_code(500);
-        error_log('Erreur suppression projet: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Erreur suppression']);
+        timer_log('Erreur suppression projet: ' . $e->getMessage());
+        timer_fail('Erreur suppression', 500);
     }
-    exit();
 }
 
 // Route non trouvée
-http_response_code(404);
-echo json_encode(['success' => false, 'message' => 'Route non trouvée']);
-?> 
+timer_fail('Route non trouvée', 404);

@@ -53,6 +53,12 @@
     "productName": "TrustyTimer",
     "copyright": "Copyright © 2025 TrustyTimer",
     "icon": "assets/icon.ico",
+    "protocols": [
+      {
+        "name": "Soreva Timer",
+        "schemes": ["soreva-timer"]
+      }
+    ],
     "directories": {
       "output": "dist"
     },

@@ -496,7 +496,7 @@ function createWindow() {
     // Permettre seulement les URLs locales et l'API
     if (parsedUrl.origin !== 'http://localhost:3000' && 
         parsedUrl.origin !== 'file://' && 
-        !parsedUrl.origin.includes('trusty-projet.fr')) {
+        !parsedUrl.origin.includes('timer.soreva.app')) {
       event.preventDefault();
     }
   });
@@ -605,6 +605,51 @@ function createMenu() {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 }
+
+// Protocole personnalisé pour ouvrir l'app depuis le Dashboard (soreva-timer://open)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('soreva-timer', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('soreva-timer');
+}
+
+// Une seule instance : au clic sur soreva-timer:// depuis le navigateur, focaliser la fenêtre existante
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, commandLine) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+    const protocolUrl = commandLine.find((arg) => typeof arg === 'string' && arg.startsWith('soreva-timer://'));
+    if (protocolUrl && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      // Optionnel : charger une URL passée en paramètre pour SSO (ex. soreva-timer://open?url=...)
+      try {
+        const parsed = new URL(protocolUrl);
+        const targetUrl = parsed.searchParams.get('url');
+        if (targetUrl && mainWindow.webContents) {
+          mainWindow.loadURL(targetUrl);
+        }
+      } catch (_e) {
+        // Ignorer les erreurs de parsing
+      }
+    }
+  });
+}
+
+// macOS : réception du protocole (open-url)
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (url && url.startsWith('soreva-timer://') && mainWindow && !mainWindow.isDestroyed()) {
+    bringMainWindowToFront();
+  }
+});
 
 // Événements de l'application
 app.whenReady().then(async () => {
@@ -883,6 +928,18 @@ ipcMain.handle('load-projects', async () => {
   }
 });
 
+ipcMain.handle('load-clients', async () => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      return [];
+    }
+    return await apiManager.loadClients();
+  } catch (error) {
+    console.error('Erreur lors du chargement des clients:', error);
+    return [];
+  }
+});
+
 ipcMain.handle('load-project', async (event, projectId) => {
   try {
     if (!configManager || !configManager.isApiConfigured()) {
@@ -1094,6 +1151,8 @@ ipcMain.handle('authenticate-api', async (event, credentials) => {
       await configManager.setFreelanceConfig?.({
         ...existingFreelance,
         id: freelance.id ?? result.freelanceId ?? existingFreelance.id ?? null,
+        coreUserId: result.coreUserId ?? existingFreelance.coreUserId ?? null,
+        orgId: result.orgId ?? existingFreelance.orgId ?? null,
         name: normalizedName,
         email: freelance.email || existingFreelance.email || ''
       });

@@ -5,10 +5,12 @@ const os = require('os');
 class ApiManager {
   constructor() {
     this.config = {
-      baseUrl: 'https://trusty-projet.fr/api/api-timer.php',
+      baseUrl: 'https://timer.soreva.app/api-timer.php',
       timeout: 30000,
       token: null,
-      freelanceId: null
+      freelanceId: null,
+      coreUserId: null,
+      orgId: null
     };
 
     // Système de queue pour éviter les conflits de concurrence
@@ -50,7 +52,7 @@ class ApiManager {
       const url = `${this.config.baseUrl}?action=login`;
       console.log('🔍 DEBUG - URL d\'authentification:', url);
       console.log('🔍 DEBUG - Config baseUrl:', this.config.baseUrl);
-      console.log('🔍 DEBUG - Credentials:', { username: credentials.username, password: '***' });
+      console.log('🔍 DEBUG - Credentials:', { email: credentials.email, password: '***' });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -58,7 +60,7 @@ class ApiManager {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: credentials.username,
+          email: credentials.email,
           password: credentials.password
         }),
         timeout: this.config.timeout
@@ -103,21 +105,25 @@ class ApiManager {
       if (data.success && data.token) {
         this.config.token = data.token;
         this.config.freelanceId = data.freelance_id;
+        this.config.coreUserId = data.core_user_id || null;
+        this.config.orgId = data.org_id || null;
 
-        // Réinitialiser le blocage éventuel après une authentification réussie
         this.authLockedUntil = null;
-        // Autoriser immédiatement une nouvelle connexion après un succès
         this.lastAuthAttempt = 0;
 
-        // Sauvegarder le token localement (chiffré)
-        await this.saveTokenLocally(data.token, data.freelance_id);
+        await this.saveTokenLocally(data.token, data.freelance_id, data.core_user_id, data.org_id);
 
-        console.log('✅ Authentification réussie');
+        console.log('✅ Authentification réussie (CoreAuth)');
         return {
           success: true,
           token: data.token,
           freelanceId: data.freelance_id,
-          freelanceInfo: data.freelance || null
+          coreUserId: data.core_user_id || null,
+          orgId: data.org_id || null,
+          freelanceInfo: {
+            name: data.freelance_name || null,
+            ...(data.freelance || {})
+          }
         };
       } else {
         throw new Error(data.message || 'Échec de l\'authentification');
@@ -179,13 +185,14 @@ class ApiManager {
     }
   }
 
-  // Sauvegarde locale sécurisée du token
-  async saveTokenLocally(token, freelanceId) {
+  async saveTokenLocally(token, freelanceId, coreUserId = null, orgId = null) {
     try {
       await fs.ensureDir(this.tempDir);
       const tokenData = {
-        token: token,
-        freelanceId: freelanceId,
+        token,
+        freelanceId,
+        coreUserId: coreUserId || null,
+        orgId: orgId || null,
         timestamp: Date.now()
       };
       
@@ -196,18 +203,18 @@ class ApiManager {
     }
   }
 
-  // Chargement du token local
   async loadTokenLocally() {
     try {
       const tokenPath = path.join(this.tempDir, '.auth_token');
       if (await fs.pathExists(tokenPath)) {
         const tokenData = await fs.readJSON(tokenPath);
         
-        // Vérifier que le token n'est pas trop ancien (24h max)
         const tokenAge = Date.now() - tokenData.timestamp;
         if (tokenAge < 24 * 60 * 60 * 1000) {
           this.config.token = tokenData.token;
           this.config.freelanceId = tokenData.freelanceId;
+          this.config.coreUserId = tokenData.coreUserId || null;
+          this.config.orgId = tokenData.orgId || null;
           return true;
         }
       }
@@ -445,6 +452,19 @@ class ApiManager {
         throw new Error(response.message || 'Erreur lors du chargement');
       }
     }, 'loadProjects');
+  }
+
+  // Charger la liste des clients existants (pour création de projet)
+  async loadClients() {
+    return this.queueOperation(async () => {
+      const response = await this.makeSecureRequest('clients', {
+        method: 'GET'
+      });
+      if (response.success) {
+        return response.data || [];
+      }
+      throw new Error(response.message || 'Erreur chargement clients');
+    }, 'loadClients');
   }
 
   // Supprimer un projet

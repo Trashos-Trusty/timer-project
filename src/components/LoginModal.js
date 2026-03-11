@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { User, Lock, Zap, ExternalLink } from 'lucide-react';
+import { Mail, Lock, Zap, ExternalLink } from 'lucide-react';
 
 const CREDENTIALS_STORAGE_KEY = 'timer-project.remembered-credentials';
 
@@ -22,7 +22,7 @@ const loadRememberedCredentials = () => {
     }
 
     return {
-      username: parsed.username || '',
+      email: parsed.email || parsed.username || '',
       password: parsed.password || '',
       rememberMe: parsed.rememberMe !== false
     };
@@ -41,7 +41,7 @@ const persistRememberedCredentials = (credentials) => {
     window.localStorage.setItem(
       CREDENTIALS_STORAGE_KEY,
       JSON.stringify({
-        username: credentials.username,
+        email: credentials.email,
         password: credentials.password,
         rememberMe: true,
         savedAt: Date.now()
@@ -66,7 +66,7 @@ const clearRememberedCredentials = () => {
 
 const LoginModal = ({ onLogin }) => {
   const [credentials, setCredentials] = useState({
-    username: '',
+    email: '',
     password: '',
     rememberMe: false
   });
@@ -92,7 +92,7 @@ const LoginModal = ({ onLogin }) => {
 
     try {
       const loginPayload = {
-        username: creds.username,
+        email: creds.email,
         password: creds.password
       };
       const success = await onLogin(loginPayload);
@@ -155,7 +155,7 @@ const LoginModal = ({ onLogin }) => {
             <Zap className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">TrustyTimer</h2>
-          <p className="text-gray-600">Connectez-vous pour accéder à l'application</p>
+          <p className="text-gray-600">Connectez-vous avec votre compte Soreva</p>
         </div>
 
         {/* Formulaire */}
@@ -167,21 +167,21 @@ const LoginModal = ({ onLogin }) => {
           )}
 
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-              Nom d'utilisateur
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              Adresse email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
+                <Mail className="h-5 w-5 text-gray-400" />
               </div>
               <input
-                type="text"
-                id="username"
-                name="username"
-                value={credentials.username}
+                type="email"
+                id="email"
+                name="email"
+                value={credentials.email}
                 onChange={handleChange}
                 className="input pl-10"
-                placeholder="Entrez votre nom d'utilisateur"
+                placeholder="Entrez votre adresse email"
                 required
               />
             </div>
@@ -236,7 +236,7 @@ const LoginModal = ({ onLogin }) => {
         <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="text-center">
             <p className="text-sm text-gray-600 mb-3">
-              Pas encore de compte freelance ?
+              Pas encore de compte Soreva ?
             </p>
             <button
               onClick={handleSignUp}

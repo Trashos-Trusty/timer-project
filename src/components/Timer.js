@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow, AlertTriangle } from 'lucide-react';
+import { Play, Pause, Square, Timer, Edit, Clock, BookOpen, Trash2, AppWindow, AlertTriangle, FileText } from 'lucide-react';
 import connectionManager from '../connectionManager';
 import { isSessionExpiredError, markSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../utils/authErrors';
 
@@ -65,6 +65,10 @@ const TimerComponent = forwardRef((
   const [autoPausedForOvertime, setAutoPausedForOvertime] = useState(false);
   const [syncRetryMeta, setSyncRetryMeta] = useState({ failureCount: 0, cooldownUntil: null });
   const [persistenceError, setPersistenceError] = useState(null);
+  /** Modale confirmation facture : 'confirm' = "Créer facture de XXh ?", 'edit' = saisie manuelle des heures */
+  const [factureConfirmOpen, setFactureConfirmOpen] = useState(false);
+  const [factureConfirmStep, setFactureConfirmStep] = useState('confirm');
+  const [factureHoursEdit, setFactureHoursEdit] = useState(1);
 
   const currentSessionElapsed = Math.max(0, currentTime - baseProjectTime);
   const hasPendingSession = Boolean(
@@ -406,6 +410,16 @@ const TimerComponent = forwardRef((
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
+
+  // Heures à facturer = taille du pack (total_time_allocated) : le client achète 10h, on facture 10h
+  const suggestedFactureHours = React.useMemo(() => {
+    if (!selectedProject) return 1;
+    const packSeconds = Number(selectedProject.totalTime) || 0;
+    if (packSeconds > 0) {
+      return Math.round((packSeconds / 3600) * 10) / 10;
+    }
+    return 1;
+  }, [selectedProject]);
 
   useEffect(() => {
     hasAcknowledgedOvertimeRef.current = hasAcknowledgedOvertime;
@@ -2268,8 +2282,8 @@ const TimerComponent = forwardRef((
             {selectedProject.description && (
               <p className="text-gray-600 text-sm mb-1">{selectedProject.description}</p>
             )}
-            {selectedProject.client && (
-              <p className="text-xs text-gray-500">Client: {selectedProject.client}</p>
+            {(selectedProject.client ?? selectedProject.clientName) && (
+              <p className="text-xs text-gray-500">Client: {selectedProject.client ?? selectedProject.clientName}</p>
             )}
           </div>
           
@@ -2283,6 +2297,115 @@ const TimerComponent = forwardRef((
           )}
         </div>
       </div>
+
+      {/* CTA Facture maintenance : bouton discret, confirmation au clic */}
+      {(selectedProject.client ?? selectedProject.clientName) && (() => {
+        const clientLabel = selectedProject.client ?? selectedProject.clientName ?? '';
+        const openFactureWithHours = (h) => {
+          const hours = Math.max(0.5, Number(h) || 1);
+          const url = `https://facture.soreva.app/documents/create?from_timer=1&hours=${encodeURIComponent(hours)}&client_name=${encodeURIComponent(clientLabel)}&label=Maintenance`;
+          if (typeof window.electronAPI?.openExternal === 'function') {
+            window.electronAPI.openExternal(url);
+          } else {
+            window.open(url, '_blank');
+          }
+          setFactureConfirmOpen(false);
+          setFactureConfirmStep('confirm');
+        };
+        const handleOpenConfirm = () => {
+          setFactureHoursEdit(suggestedFactureHours);
+          setFactureConfirmOpen(true);
+          setFactureConfirmStep('confirm');
+        };
+        return (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={handleOpenConfirm}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-primary-200 bg-primary-50/80 hover:bg-primary-100/80 text-primary-700 hover:text-primary-800 transition-colors duration-200 text-sm font-medium"
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span>Créer une facture de maintenance</span>
+            </button>
+            <p className="mt-1.5 text-center text-xs text-gray-500">
+              Ouvre votre espace Factures avec une facture préremplie
+            </p>
+
+            {/* Modale confirmation : XXh ? Oui / Non → si Non : combien d'heures ? */}
+            {factureConfirmOpen && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => { setFactureConfirmOpen(false); setFactureConfirmStep('confirm'); }}>
+                <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                  {factureConfirmStep === 'confirm' ? (
+                    <>
+                      <p className="text-gray-800 font-medium text-center">
+                        Créer une facture de <strong>{suggestedFactureHours}h</strong> de maintenance ?
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => openFactureWithHours(suggestedFactureHours)}
+                          className="flex-1 py-2.5 rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700"
+                        >
+                          Oui
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFactureConfirmStep('edit')}
+                          className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                        >
+                          Modifier le temps
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-800 font-medium text-center">Combien d'heures à facturer ?</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0.5"
+                          step="0.5"
+                          value={factureHoursEdit}
+                          onChange={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (!Number.isNaN(v) && v >= 0) setFactureHoursEdit(v);
+                          }}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-center"
+                          autoFocus
+                        />
+                        <span className="text-gray-500">h</span>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setFactureConfirmStep('confirm')}
+                          className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                        >
+                          Retour
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openFactureWithHours(factureHoursEdit)}
+                          className="flex-1 py-2.5 rounded-lg bg-primary-600 text-white font-medium hover:bg-primary-700"
+                        >
+                          Créer la facture
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setFactureConfirmOpen(false); setFactureConfirmStep('confirm'); }}
+                    className="w-full py-1.5 text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Layout principal avec diviseur redimensionnable */}
       <div 

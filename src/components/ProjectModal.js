@@ -16,7 +16,26 @@ const ProjectModal = ({ project, onSave, onClose }) => {
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [clientList, setClientList] = useState([]);
   const { addToast } = useToast();
+
+  // Charger la liste des clients existants à l'ouverture de la modal
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (typeof window.electronAPI?.loadClients !== 'function') return;
+      try {
+        const list = await window.electronAPI.loadClients();
+        if (!cancelled && Array.isArray(list)) {
+          setClientList(list);
+        }
+      } catch (err) {
+        if (!cancelled) console.warn('Chargement des clients:', err);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (project) {
@@ -254,9 +273,22 @@ const ProjectModal = ({ project, onSave, onClose }) => {
               name="client"
               value={formData.client}
               onChange={handleChange}
+              list="project-modal-client-list"
               className="input"
-              placeholder="Nom du client (optionnel)"
+              placeholder={clientList.length > 0 ? "Choisir un client existant ou en saisir un nouveau" : "Nom du client (optionnel)"}
             />
+            <datalist id="project-modal-client-list">
+              {clientList.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.company ? `${c.name} – ${c.company}` : c.name}
+                </option>
+              ))}
+            </datalist>
+            {clientList.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500">
+                {clientList.length} client{clientList.length > 1 ? "s" : ""} enregistré{clientList.length > 1 ? "s" : ""} – commencez à taper pour affiner
+              </p>
+            )}
           </div>
 
           {/* Temps total */}

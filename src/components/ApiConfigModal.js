@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 
 const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
   const [config, setConfig] = useState({
-    baseUrl: 'https://trusty-projet.fr/api/api-timer.php',
+    baseUrl: 'https://timer.soreva.app/api-timer.php',
     timeout: 30000,
     retryAttempts: 3,
     retryDelay: 1000
   });
   
   const [credentials, setCredentials] = useState({
-    username: '',
+    email: '',
     password: '',
     rememberMe: false
   });
@@ -60,7 +60,7 @@ const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
         throw new Error('L\'URL de l\'API est requise');
       }
 
-      if (!credentials.username || !credentials.password) {
+      if (!credentials.email || !credentials.password) {
         throw new Error('Les identifiants sont requis');
       }
 
@@ -127,7 +127,7 @@ const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
 
   const resetToDefaults = () => {
     setConfig({
-      baseUrl: 'https://trusty-projet.fr/api/api-timer.php',
+      baseUrl: 'https://timer.soreva.app/api-timer.php',
       timeout: 30000,
       retryAttempts: 3,
       retryDelay: 1000
@@ -172,7 +172,7 @@ const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
                   value={config.baseUrl}
                   onChange={(e) => handleConfigChange('baseUrl', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="https://trusty-projet.fr/api/api-timer.php"
+                  placeholder="https://timer.soreva.app/api-timer.php"
                   disabled={isLoading}
                 />
               </div>
@@ -185,18 +185,18 @@ const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nom d'utilisateur *
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Adresse email *
                 </label>
                 <input
-                  type="text"
-                  id="username"
-                  value={credentials.username}
-                  onChange={(e) => handleCredentialsChange('username', e.target.value)}
+                  type="email"
+                  id="email"
+                  value={credentials.email}
+                  onChange={(e) => handleCredentialsChange('email', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Votre nom d'utilisateur"
+                  placeholder="Votre adresse email"
                   disabled={isLoading}
-                  autoComplete="username"
+                  autoComplete="email"
                 />
               </div>
 
@@ -373,7 +373,7 @@ const ApiConfigModal = ({ isOpen, onClose, onSave }) => {
             <button
               type="button"
               onClick={handleSave}
-              disabled={isLoading || !config.baseUrl || !credentials.username || !credentials.password}
+              disabled={isLoading || !config.baseUrl || !credentials.email || !credentials.password}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? 'Configuration...' : 'Sauvegarder et se connecter'}
