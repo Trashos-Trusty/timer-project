@@ -69,6 +69,12 @@ let networkMonitorInterval = null;
 let isNetworkReachable = null;
 let isDrainingOfflineQueue = false;
 
+/** Rafraîchir le JWT Timer avant expiration pendant longues sessions sans appel API */
+const TOKEN_REFRESH_INTERVAL_MS = 35 * 60 * 1000;
+/** Si expiresAt est dans moins de ce délai, tenter refresh (marge > TTL proactive apiManager 15 min) */
+const TOKEN_REFRESH_SOON_MS = 55 * 60 * 1000;
+let tokenRefreshIntervalId = null;
+
 const appStartUrl = isDev
   ? 'http://localhost:3000'
   : `file://${path.join(__dirname, '../build/index.html')}`;
@@ -115,6 +121,42 @@ function broadcastOfflineStatus(payload) {
   if (payload && payload.status) {
     broadcastOfflineSyncEvent(payload.status, payload);
   }
+}
+
+function stopTokenRefreshScheduler() {
+  if (tokenRefreshIntervalId) {
+    clearInterval(tokenRefreshIntervalId);
+    tokenRefreshIntervalId = null;
+  }
+}
+
+async function tryProactiveTokenRefresh() {
+  try {
+    if (!apiManager?.config?.token || !configManager?.isApiConfigured?.()) {
+      return;
+    }
+    const exp = apiManager.config.expiresAt;
+    if (exp) {
+      const expiresAtMs = new Date(exp).getTime();
+      const remaining = expiresAtMs - Date.now();
+      if (Number.isFinite(remaining) && remaining > TOKEN_REFRESH_SOON_MS) {
+        return;
+      }
+    }
+    const ok = await apiManager.refreshToken();
+    if (ok) {
+      console.log('🔐 Token API rafraîchi (intervalle ou reprise veille)');
+    }
+  } catch (error) {
+    console.warn('Rafraîchissement token périodique ignoré:', error?.message || error);
+  }
+}
+
+function startTokenRefreshScheduler() {
+  stopTokenRefreshScheduler();
+  tokenRefreshIntervalId = setInterval(() => {
+    tryProactiveTokenRefresh();
+  }, TOKEN_REFRESH_INTERVAL_MS);
 }
 
 function notifyAppClose() {
@@ -676,6 +718,9 @@ app.whenReady().then(async () => {
         // Charger le token local s'il existe
         await apiManager.loadTokenLocally();
         console.log('✅ Connexion API initialisée avec succès');
+        if (apiManager.config.token) {
+          startTokenRefreshScheduler();
+        }
       } catch (error) {
         console.warn('⚠️ Erreur lors de l\'initialisation API:', error.message);
       }
@@ -692,10 +737,16 @@ app.whenReady().then(async () => {
   createWindow();
   createMenu();
   startNetworkWatcher();
+
+  powerMonitor.on('resume', () => {
+    tryProactiveTokenRefresh();
+  });
 });
 
 app.on('window-all-closed', async () => {
   notifyAppClose();
+
+  stopTokenRefreshScheduler();
 
   // Nettoyer les ressources API
   if (apiManager) {
@@ -719,6 +770,7 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   notifyAppClose();
 
+  stopTokenRefreshScheduler();
   stopNetworkWatcher();
   destroyMiniWindow();
 });
@@ -1135,6 +1187,8 @@ ipcMain.handle('authenticate-api', async (event, credentials) => {
   try {
     const result = await apiManager.authenticate(credentials);
     if (result?.success && configManager) {
+      startTokenRefreshScheduler();
+
       const existingFreelance = configManager.getFreelanceConfig?.() || {};
       const freelance = result.freelanceInfo || {};
 
@@ -1188,9 +1242,12 @@ ipcMain.handle('get-freelance-info', async () => {
 // Effacer le token
 ipcMain.handle('clear-token', async () => {
   try {
+    stopTokenRefreshScheduler();
+
     // Effacer le token de l'API Manager
     apiManager.config.token = null;
     apiManager.config.freelanceId = null;
+    apiManager.config.expiresAt = null;
 
     // Effacer le token local sauvegardé
     await apiManager.clearTokenLocally();

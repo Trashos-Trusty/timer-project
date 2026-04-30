@@ -95,9 +95,10 @@ const LoginModal = ({ onLogin }) => {
         email: creds.email,
         password: creds.password
       };
-      const success = await onLogin(loginPayload);
+      const loginResult = await onLogin(loginPayload);
+      const isSuccess = loginResult === true || loginResult?.success === true;
 
-      if (success) {
+      if (isSuccess) {
         if (shouldRemember) {
           persistRememberedCredentials(loginPayload);
         } else {
@@ -107,12 +108,20 @@ const LoginModal = ({ onLogin }) => {
       }
 
       if (!silent) {
-        setError('Identifiants incorrects');
+        const messageFromResult =
+          typeof loginResult?.message === 'string' && loginResult.message.trim()
+            ? loginResult.message.trim()
+            : 'Identifiants incorrects';
+        setError(messageFromResult);
       }
       return false;
     } catch (err) {
       if (!silent) {
-        setError('Erreur de connexion');
+        const messageFromError =
+          typeof err?.message === 'string' && err.message.trim()
+            ? err.message.trim()
+            : 'Erreur de connexion';
+        setError(messageFromError);
       }
       return false;
     } finally {

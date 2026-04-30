@@ -742,13 +742,22 @@ function App() {
 
           setIsAuthenticated(true);
           setFreelanceInfo(result.freelanceInfo);
-          return true;
+          return { success: true };
         }
+
+        return {
+          success: false,
+          message: result?.message || 'Échec de la connexion. Vérifiez vos identifiants.'
+        };
       }
-      return false;
+
+      return {
+        success: false,
+        message: 'API Electron indisponible. Redémarrez l’application.'
+      };
     } catch (error) {
       console.error('Erreur d\'authentification:', error);
-      return false;
+      throw error;
     }
   };
 

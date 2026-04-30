@@ -227,6 +227,12 @@ const TimerComponent = forwardRef((
       if (result?.error) {
         const structuredError = new Error(result.error.message || "La sauvegarde du projet a échoué.");
         structuredError.details = result.error.details || null;
+        if (result.error.status != null) {
+          structuredError.status = result.error.status;
+        }
+        if (result.error.statusText != null) {
+          structuredError.statusText = result.error.statusText;
+        }
         throw structuredError;
       }
       const isResultObject = result && typeof result === 'object';

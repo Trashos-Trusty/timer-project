@@ -12,9 +12,13 @@ date_default_timezone_set('Europe/Paris');
 // --------------------------------------------------------------------------
 require_once __DIR__ . '/../trusty_core/CoreAuthService.php';
 use TrustyCore\CoreAuthService;
+use TrustyCore\ClientIpResolver;
 use TrustyCore\SecurityHeaders;
 
 $trustyCoreDir = dirname(__DIR__) . '/trusty_core';
+if (is_file($trustyCoreDir . '/ClientIpResolver.php')) {
+    require_once $trustyCoreDir . '/ClientIpResolver.php';
+}
 if (is_file($trustyCoreDir . '/SecurityHeaders.php')) {
     require_once $trustyCoreDir . '/SecurityHeaders.php';
 }
@@ -40,10 +44,21 @@ if ($loaderPath !== '' && is_file($loaderPath)) {
             'pass' => getenv('DB_PASSWORD') ?: getenv('SOREVA_DB_PASS') ?: '',
         ],
         'jwt_secret' => getenv('JWT_SECRET') ?: getenv('SOREVA_JWT_SECRET') ?: '',
+        'app' => [
+            'open_beta' => filter_var(getenv('SOREVA_OPEN_BETA'), FILTER_VALIDATE_BOOLEAN),
+            'trust_forwarded_ip' => filter_var(getenv('SOREVA_TRUST_FORWARDED_IP'), FILTER_VALIDATE_BOOLEAN),
+        ],
     ];
 }
 
 $db = $TIMER_SECRETS['db'] ?? [];
+$TIMER_OPEN_BETA = !empty($TIMER_SECRETS['app']['open_beta']) || filter_var(getenv('SOREVA_OPEN_BETA'), FILTER_VALIDATE_BOOLEAN);
+$timerTrustForwardedIpOverride = getenv('SOREVA_TRUST_FORWARDED_IP');
+$TIMER_TRUST_FORWARDED_IP = (bool) ($TIMER_SECRETS['app']['trust_forwarded_ip'] ?? false);
+if ($timerTrustForwardedIpOverride !== false && $timerTrustForwardedIpOverride !== '') {
+    $TIMER_TRUST_FORWARDED_IP = filter_var($timerTrustForwardedIpOverride, FILTER_VALIDATE_BOOLEAN);
+}
+
 // Une seule config DB : utilisée par CoreAuthService et par getConnection()
 $DB_CONFIG = [
     'host' => $db['host'] ?? '127.0.0.1',
@@ -52,6 +67,12 @@ $DB_CONFIG = [
     'database' => $db['name'] ?? 'soreva_full',
 ];
 $jwtSecret = $TIMER_SECRETS['jwt_secret'] ?? '';
+
+/** Durée de vie des tokens Timer (heures). Court pour limiter l'usage JWT comme "session" navigateur ; le client doit rafraîchir avant expiration. */
+const TIMER_TOKEN_EXPIRY_HOURS = 2;
+
+/** Après expiration du JWT, la route refresh accepte encore le Bearer pendant cette fenêtre (signature inchangée). 72h : longues pauses sans appel API. */
+const TIMER_REFRESH_EXPIRED_LEEWAY_SECONDS = 72 * 3600;
 
 function timer_json(array $data, int $status = 200): void
 {
@@ -73,6 +94,87 @@ function timer_log(string $msg): void
     if (getenv('TIMER_DEBUG') === '1') {
         error_log($msg);
     }
+}
+
+function timer_rate_limit_dir(): string
+{
+    $override = getenv('TIMER_RATE_LIMIT_DIR');
+    if (is_string($override) && trim($override) !== '') {
+        return rtrim($override, '/\\');
+    }
+
+    return __DIR__ . '/storage/rate_limit';
+}
+
+function timer_client_ip(): string
+{
+    global $TIMER_TRUST_FORWARDED_IP;
+
+    return ClientIpResolver::resolve($_SERVER, (bool) $TIMER_TRUST_FORWARDED_IP);
+}
+
+function timer_rate_limit_subject(string $subject, ?string $identity = null): string
+{
+    if ($subject === 'identity_or_ip' && $identity !== null && $identity !== '') {
+        return 'identity:' . $identity;
+    }
+
+    return 'ip:' . timer_client_ip();
+}
+
+function timer_check_rate_limit(string $subjectKey, string $bucket, int $maxAttempts, int $windowSeconds): ?int
+{
+    $storageDir = timer_rate_limit_dir();
+    if (!is_dir($storageDir)) {
+        @mkdir($storageDir, 0755, true);
+        @file_put_contents($storageDir . '/.htaccess', "Require all denied\n");
+    }
+
+    $key = md5($subjectKey . ':' . $bucket);
+    $file = $storageDir . '/' . $key . '.json';
+    $now = time();
+    $data = [];
+
+    if (file_exists($file)) {
+        $content = @file_get_contents($file);
+        if ($content !== false) {
+            $data = json_decode($content, true) ?? [];
+        }
+    }
+
+    $attempts = array_values(array_filter($data['attempts'] ?? [], static function ($timestamp) use ($now, $windowSeconds) {
+        return ($now - (int) $timestamp) < $windowSeconds;
+    }));
+
+    if (count($attempts) >= $maxAttempts) {
+        $oldest = (int) min($attempts);
+        return max(1, $windowSeconds - ($now - $oldest));
+    }
+
+    $attempts[] = $now;
+    $data['attempts'] = $attempts;
+    $data['last_attempt'] = $now;
+
+    @file_put_contents($file, json_encode($data), LOCK_EX);
+
+    return null;
+}
+
+function timer_enforce_rate_limit(string $bucket, int $maxAttempts, int $windowSeconds, string $subject = 'ip', ?string $identity = null): void
+{
+    $retryAfter = timer_check_rate_limit(
+        timer_rate_limit_subject($subject, $identity),
+        $bucket,
+        $maxAttempts,
+        $windowSeconds
+    );
+
+    if ($retryAfter === null) {
+        return;
+    }
+
+    header('Retry-After: ' . $retryAfter);
+    timer_fail('Trop de requêtes. Veuillez réessayer plus tard.', 429, ['retry_after' => $retryAfter]);
 }
 
 function getBearerToken(): string
@@ -120,6 +222,22 @@ CoreAuthService::configure(
     $DB_CONFIG['password'],
     $jwtSecret
 );
+
+/**
+ * Vérifie si l'organisation a accès au module TIMER.
+ * En mode open beta, l'accès est toujours autorisé.
+ */
+function timer_has_module_access(?string $orgId): bool
+{
+    global $TIMER_OPEN_BETA;
+    if ($orgId === null || $orgId === '') {
+        return false;
+    }
+    if ($TIMER_OPEN_BETA) {
+        return true;
+    }
+    return CoreAuthService::checkEntitlement($orgId, 'TIMER');
+}
 
 // --------------------------------------------------------------------------
 // CORS : origines autorisees (pas de wildcard). Origin vide/absent autorise
@@ -275,6 +393,8 @@ if ($token) {
 
 // ======================= ROUTE : LOGIN =======================
 if ($action === 'login' && $method === 'POST') {
+    timer_enforce_rate_limit('POST login', 5, 900, 'ip');
+
     $rawInput = file_get_contents('php://input');
     $input = json_decode($rawInput, true);
     if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $input === null)) {
@@ -297,10 +417,9 @@ if ($action === 'login' && $method === 'POST') {
 
     $coreUserId = $authResult['core_user_id'];
     $orgId = $authResult['org_id'];
-    $coreToken = $authResult['token'];
 
     // Verifier l'entitlement TIMER pour cette organisation
-    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+    if (!timer_has_module_access($orgId)) {
         timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 
@@ -311,6 +430,9 @@ if ($action === 'login' && $method === 'POST') {
         timer_fail('Impossible de créer le profil Timer', 500);
     }
 
+    // Token court (TIMER_TOKEN_EXPIRY_HOURS), pas de JWT 24h comme session ; le client doit appeler refresh avant expiration
+    $coreToken = CoreAuthService::createToken($coreUserId, $orgId, TIMER_TOKEN_EXPIRY_HOURS);
+
     timer_json([
         'success' => true,
         'token' => $coreToken,
@@ -318,16 +440,18 @@ if ($action === 'login' && $method === 'POST') {
         'freelance_name' => $freelance['name'],
         'core_user_id' => $coreUserId,
         'org_id' => $orgId,
-        'expires_at' => jwt_expires_at($coreToken) ?? date('c', time() + (24 * 60 * 60))
+        'expires_at' => jwt_expires_at($coreToken) ?? date('c', time() + (TIMER_TOKEN_EXPIRY_HOURS * 3600))
     ], 200);
 }
 
 // ======================= ROUTE : VERIFY =======================
 if ($action === 'verify' && $method === 'GET') {
+    timer_enforce_rate_limit('GET verify', 300, 3600, 'identity_or_ip', $coreUserId);
+
     if (!$coreUserId || !$orgId) {
         timer_fail('Token manquant ou invalide', 401);
     }
-    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+    if (!timer_has_module_access($orgId)) {
         timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 
@@ -347,14 +471,25 @@ if ($action === 'verify' && $method === 'GET') {
 
 // ======================= ROUTE : REFRESH =======================
 if ($action === 'refresh' && $method === 'POST') {
+    // JWT strictement expiré : validateToken échoue plus haut ; ici on ré-ouvre l'identité pour refresh uniquement
+    if ((!$coreUserId || !$orgId) && $token) {
+        $payloadRefresh = CoreAuthService::validateTokenAllowExpired($token, TIMER_REFRESH_EXPIRED_LEEWAY_SECONDS);
+        if ($payloadRefresh) {
+            $coreUserId = $payloadRefresh['sub'] ?? null;
+            $orgId = $payloadRefresh['org_id'] ?? null;
+        }
+    }
+
+    timer_enforce_rate_limit('POST refresh', 120, 3600, 'identity_or_ip', $coreUserId);
+
     if (!$coreUserId || !$orgId) {
         timer_fail('Token manquant ou invalide', 401);
     }
-    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+    if (!timer_has_module_access($orgId)) {
         timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 
-    $newToken = CoreAuthService::createToken($coreUserId, $orgId);
+    $newToken = CoreAuthService::createToken($coreUserId, $orgId, TIMER_TOKEN_EXPIRY_HOURS);
 
     $pdo = getConnection();
     $freelance = resolveFreelanceProfile($pdo, $coreUserId, $orgId);
@@ -365,7 +500,7 @@ if ($action === 'refresh' && $method === 'POST') {
         'freelance_id' => $freelance ? $freelance['id'] : null,
         'core_user_id' => $coreUserId,
         'org_id' => $orgId,
-        'expires_at' => jwt_expires_at($newToken) ?? date('c', time() + (24 * 60 * 60))
+        'expires_at' => jwt_expires_at($newToken) ?? date('c', time() + (TIMER_TOKEN_EXPIRY_HOURS * 3600))
     ], 200);
 }
 
@@ -387,7 +522,7 @@ if (!$coreUserId || !$orgId) {
     }
 }
 if ($coreUserId && $orgId && !in_array($action, ['health', 'login'])) {
-    if (!CoreAuthService::checkEntitlement($orgId, 'TIMER')) {
+    if (!timer_has_module_access($orgId)) {
         timer_fail('Accès au module Timer non autorisé pour cette organisation', 403);
     }
 }
@@ -403,6 +538,8 @@ $freelanceId = $freelanceProfile['id'];
 // ======================= ROUTE : GET CLIENTS =======================
 // Même source que Facture et Project Tracker (facture_clients) pour afficher les mêmes clients.
 if ($action === 'clients' && $method === 'GET') {
+    timer_enforce_rate_limit('GET clients', 300, 3600, 'identity_or_ip', $coreUserId);
+
     try {
         $stmt = $pdo->prepare(
             'SELECT id, name, company FROM facture_clients WHERE org_id = ? ORDER BY name ASC'
@@ -425,6 +562,8 @@ if ($action === 'clients' && $method === 'GET') {
 
 // ======================= ROUTE : GET PROJECTS =======================
 if ($action === 'projects' && $method === 'GET') {
+    timer_enforce_rate_limit('GET projects', 600, 3600, 'identity_or_ip', $coreUserId);
+
     try {
         $stmt = $pdo->prepare(
             'SELECT * FROM timer_projects WHERE freelance_id = ? AND org_id = ? ORDER BY created_at DESC'
@@ -521,6 +660,8 @@ if ($action === 'projects' && $method === 'GET') {
 
 // ======================= ROUTE : SAVE PROJECT (POST) =======================
 if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
+    timer_enforce_rate_limit('POST projects', 600, 3600, 'identity_or_ip', $coreUserId);
+
     $rawInput = file_get_contents('php://input');
     $projectData = json_decode($rawInput, true);
     if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $projectData === null)) {
@@ -700,6 +841,8 @@ if (in_array($action, ['projects', 'save-project']) && $method === 'POST') {
 
 // ======================= ROUTE : DELETE PROJECT =======================
 if ($action === 'projects' && $method === 'DELETE') {
+    timer_enforce_rate_limit('DELETE projects', 60, 3600, 'identity_or_ip', $coreUserId);
+
     $rawInput = file_get_contents('php://input');
     $projectData = json_decode($rawInput, true);
     if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $projectData === null)) {

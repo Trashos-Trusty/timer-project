@@ -10,7 +10,8 @@ class ApiManager {
       token: null,
       freelanceId: null,
       coreUserId: null,
-      orgId: null
+      orgId: null,
+      expiresAt: null
     };
 
     // Système de queue pour éviter les conflits de concurrence
@@ -107,11 +108,12 @@ class ApiManager {
         this.config.freelanceId = data.freelance_id;
         this.config.coreUserId = data.core_user_id || null;
         this.config.orgId = data.org_id || null;
+        this.config.expiresAt = data.expires_at || null;
 
         this.authLockedUntil = null;
         this.lastAuthAttempt = 0;
 
-        await this.saveTokenLocally(data.token, data.freelance_id, data.core_user_id, data.org_id);
+        await this.saveTokenLocally(data.token, data.freelance_id, data.core_user_id, data.org_id, data.expires_at);
 
         console.log('✅ Authentification réussie (CoreAuth)');
         return {
@@ -174,7 +176,8 @@ class ApiManager {
       if (response.ok) {
         const data = await response.json();
         this.config.token = data.token;
-        await this.saveTokenLocally(data.token, this.config.freelanceId);
+        this.config.expiresAt = data.expires_at || null;
+        await this.saveTokenLocally(data.token, this.config.freelanceId, this.config.coreUserId, this.config.orgId, data.expires_at);
         return true;
       }
       return false;
@@ -185,7 +188,7 @@ class ApiManager {
     }
   }
 
-  async saveTokenLocally(token, freelanceId, coreUserId = null, orgId = null) {
+  async saveTokenLocally(token, freelanceId, coreUserId = null, orgId = null, expiresAt = null) {
     try {
       await fs.ensureDir(this.tempDir);
       const tokenData = {
@@ -193,9 +196,10 @@ class ApiManager {
         freelanceId,
         coreUserId: coreUserId || null,
         orgId: orgId || null,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        expiresAt: expiresAt || null
       };
-      
+
       const tokenPath = path.join(this.tempDir, '.auth_token');
       await fs.writeJSON(tokenPath, tokenData);
     } catch (error) {
@@ -206,19 +210,26 @@ class ApiManager {
   async loadTokenLocally() {
     try {
       const tokenPath = path.join(this.tempDir, '.auth_token');
-      if (await fs.pathExists(tokenPath)) {
-        const tokenData = await fs.readJSON(tokenPath);
-        
-        const tokenAge = Date.now() - tokenData.timestamp;
-        if (tokenAge < 24 * 60 * 60 * 1000) {
-          this.config.token = tokenData.token;
-          this.config.freelanceId = tokenData.freelanceId;
-          this.config.coreUserId = tokenData.coreUserId || null;
-          this.config.orgId = tokenData.orgId || null;
-          return true;
-        }
+      if (!(await fs.pathExists(tokenPath))) return false;
+
+      const tokenData = await fs.readJSON(tokenPath);
+
+      // Rejeter si expiration connue et dépassée
+      if (tokenData.expiresAt) {
+        const expiresAtMs = new Date(tokenData.expiresAt).getTime();
+        if (Number.isFinite(expiresAtMs) && Date.now() >= expiresAtMs) return false;
+      } else {
+        // Rétrocompatibilité : sans expiresAt, accepter au plus 2h (aligné sur TTL Timer)
+        const tokenAge = Date.now() - (tokenData.timestamp || 0);
+        if (tokenAge >= 2 * 60 * 60 * 1000) return false;
       }
-      return false;
+
+      this.config.token = tokenData.token;
+      this.config.freelanceId = tokenData.freelanceId;
+      this.config.coreUserId = tokenData.coreUserId || null;
+      this.config.orgId = tokenData.orgId || null;
+      this.config.expiresAt = tokenData.expiresAt || null;
+      return true;
     } catch (error) {
       console.error('❌ Erreur chargement token local:', error);
       return false;
@@ -306,6 +317,14 @@ class ApiManager {
   async makeSecureRequest(endpoint, options = {}) {
     if (!this.config.token) {
       throw new Error('Token d\'authentification manquant');
+    }
+
+    // Rafraîchir proactivement si le token expire dans moins de 15 min
+    if (this.config.expiresAt) {
+      const expiresAtMs = new Date(this.config.expiresAt).getTime();
+      if (Number.isFinite(expiresAtMs) && expiresAtMs - Date.now() < 15 * 60 * 1000) {
+        await this.refreshToken();
+      }
     }
 
     const url = `${this.config.baseUrl}?action=${endpoint}`;
@@ -399,6 +418,19 @@ class ApiManager {
         // Les erreurs réseau doivent remonter pour être gérées par le handler IPC (offline queue, etc.)
         if (error.isNetworkError || (!structuredError.status && !structuredError.statusText)) {
           throw error;
+        }
+
+        // Aligné sur processQueue : 401/403 relancés pour déclencher refresh + retry
+        const statusCode = structuredError.status;
+        const msg = typeof structuredError.message === 'string' ? structuredError.message : '';
+        const isAuthError = statusCode === 401 || statusCode === 403 ||
+          msg.includes('401') || msg.includes('403') || msg.toLowerCase().includes('token expiré');
+        if (isAuthError) {
+          const authErr = new Error(structuredError.message);
+          authErr.status = statusCode;
+          authErr.statusText = structuredError.statusText;
+          authErr.responseBody = structuredError.details;
+          throw authErr;
         }
 
         return { error: structuredError };
