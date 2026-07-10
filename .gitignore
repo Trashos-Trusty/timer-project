@@ -7,9 +7,6 @@ api-timer.php
 !readme.md
 !docs/project-documentation.md
 
-# Plugin WordPress
-wordpress-plugin/
-
 # Fichiers de configuration locaux
 config.json
 .env

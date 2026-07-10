@@ -51,7 +51,7 @@ const Header = ({
   const handleDownloadPlugin = () => {
     // URL sécurisée vers le plugin - à adapter selon votre hébergement
     const pluginUrl =
-      process.env.REACT_APP_PLUGIN_DOWNLOAD_URL || 'https://trusty-projet.fr/plugin/plugin.zip';
+      process.env.REACT_APP_PLUGIN_DOWNLOAD_URL || 'https://timer.soreva.app/plugin/plugin.zip';
     
     // Créer un élément de téléchargement temporaire
     const link = document.createElement('a');

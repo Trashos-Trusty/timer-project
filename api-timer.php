@@ -71,8 +71,8 @@ $jwtSecret = $TIMER_SECRETS['jwt_secret'] ?? '';
 /** Durée de vie des tokens Timer (heures). Court pour limiter l'usage JWT comme "session" navigateur ; le client doit rafraîchir avant expiration. */
 const TIMER_TOKEN_EXPIRY_HOURS = 2;
 
-/** Après expiration du JWT, la route refresh accepte encore le Bearer pendant cette fenêtre (signature inchangée). 72h : longues pauses sans appel API. */
-const TIMER_REFRESH_EXPIRED_LEEWAY_SECONDS = 72 * 3600;
+/** Après expiration du JWT, refresh accepte encore le Bearer pendant 24h (signature inchangée). */
+const TIMER_REFRESH_EXPIRED_LEEWAY_SECONDS = 24 * 3600;
 
 function timer_json(array $data, int $status = 200): void
 {

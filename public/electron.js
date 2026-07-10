@@ -1120,15 +1120,16 @@ ipcMain.handle('delete-project', async (event, projectId) => {
       throw new Error('Configuration API requise');
     }
     
-    // Charger d'abord les projets pour trouver le nom
     const projects = await apiManager.loadProjects();
     const project = projects.find(p => p.id === projectId);
-    
-    if (project) {
-      await apiManager.deleteProject(project.name);
-      console.log('Projet supprimé via API:', project.name);
+
+    if (!project) {
+      throw new Error('Projet introuvable');
     }
-    
+
+    await apiManager.deleteProject(project.id);
+    console.log('Projet supprimé via API:', project.id, project.name);
+
     return true;
   } catch (error) {
     console.error('Erreur lors de la suppression:', error);

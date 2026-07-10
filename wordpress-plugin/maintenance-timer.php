@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Maintenance Timer Client
- * Plugin URI: https://trusty-projet.fr
+ * Plugin URI: https://timer.soreva.app
  * Description: Affiche les informations de maintenance de votre site web
- * Version: 2.0.0
- * Author: Trusty Projet
+ * Version: 2.1.0
+ * Author: Soreva
  * License: GPL v2 or later
  * Text Domain: maintenance-timer-client
  */
@@ -13,10 +13,12 @@
 defined('ABSPATH') or die('Accès direct interdit!');
 
 class MaintenanceTimerClientPlugin {
-    
-    private $api_base_url = 'https://trusty-projet.fr/api/api-timer.php';
-    private $plugin_version = '2.0.0';
+
+    const DEFAULT_API_URL = 'https://timer.soreva.app/api-timer.php';
+
+    private $plugin_version = '2.1.0';
     private $cache_duration = 300; // 5 minutes
+    private $last_sync_error = null;
     
     public function __construct() {
         add_action('init', array($this, 'init'));
@@ -90,12 +92,84 @@ class MaintenanceTimerClientPlugin {
     }
     
     public function admin_init() {
-        register_setting('maintenance_timer_settings', 'maintenance_timer_project_name');
-        register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_username');
+        register_setting('maintenance_timer_settings', 'maintenance_timer_api_url', array(
+            'sanitize_callback' => array($this, 'sanitize_api_url_option')
+        ));
+        register_setting('maintenance_timer_settings', 'maintenance_timer_project_name', array(
+            'sanitize_callback' => array($this, 'sanitize_project_name_option')
+        ));
+        register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_username', array(
+            'sanitize_callback' => array($this, 'sanitize_username_option')
+        ));
         register_setting('maintenance_timer_settings', 'maintenance_timer_freelance_password', array(
             'sanitize_callback' => array($this, 'sanitize_password_option')
         ));
         register_setting('maintenance_timer_settings', 'maintenance_timer_auto_sync');
+
+        $this->maybe_migrate_api_url();
+    }
+
+    private function get_api_base_url() {
+        $url = get_option('maintenance_timer_api_url', self::DEFAULT_API_URL);
+
+        if (empty($url) || strpos($url, 'trusty-projet.fr') !== false) {
+            return self::DEFAULT_API_URL;
+        }
+
+        return $url;
+    }
+
+    private function maybe_migrate_api_url() {
+        $url = get_option('maintenance_timer_api_url');
+
+        if (empty($url) || strpos($url, 'trusty-projet.fr') !== false) {
+            update_option('maintenance_timer_api_url', self::DEFAULT_API_URL);
+        }
+    }
+
+    private function invalidate_auth_token() {
+        delete_transient('maintenance_timer_auth_token');
+    }
+
+    public function sanitize_api_url_option($url) {
+        $url = esc_url_raw(trim($url));
+
+        if ($url === '') {
+            $url = self::DEFAULT_API_URL;
+        }
+
+        if (strpos($url, 'trusty-projet.fr') !== false) {
+            $url = self::DEFAULT_API_URL;
+        }
+
+        $previous = get_option('maintenance_timer_api_url');
+        if ($previous !== $url) {
+            $this->invalidate_auth_token();
+        }
+
+        return $url;
+    }
+
+    public function sanitize_project_name_option($project_name) {
+        $project_name = sanitize_text_field(trim($project_name));
+        $previous = get_option('maintenance_timer_project_name');
+
+        if ($previous !== $project_name) {
+            $this->invalidate_auth_token();
+        }
+
+        return $project_name;
+    }
+
+    public function sanitize_username_option($username) {
+        $username = sanitize_email(trim($username));
+        $previous = get_option('maintenance_timer_freelance_username');
+
+        if ($previous !== $username) {
+            $this->invalidate_auth_token();
+        }
+
+        return $username;
     }
 
     public function sanitize_password_option($password) {
@@ -104,6 +178,8 @@ class MaintenanceTimerClientPlugin {
         if ($password === '') {
             return get_option('maintenance_timer_freelance_password');
         }
+
+        $this->invalidate_auth_token();
 
         return $password;
     }
@@ -121,33 +197,43 @@ class MaintenanceTimerClientPlugin {
                 
                 <table class="form-table">
                     <tr>
+                        <th scope="row"><?php _e('URL API Timer', 'maintenance-timer-client'); ?></th>
+                        <td>
+                            <input type="url" name="maintenance_timer_api_url"
+                                   value="<?php echo esc_attr(get_option('maintenance_timer_api_url', self::DEFAULT_API_URL)); ?>"
+                                   class="regular-text" required />
+                            <p class="description"><?php _e('Adresse de l\'API Timer Soreva (par défaut : timer.soreva.app).', 'maintenance-timer-client'); ?></p>
+                        </td>
+                    </tr>
+
+                    <tr>
                         <th scope="row"><?php _e('Nom de votre projet', 'maintenance-timer-client'); ?></th>
                         <td>
                             <input type="text" name="maintenance_timer_project_name" 
                                    value="<?php echo esc_attr(get_option('maintenance_timer_project_name')); ?>" 
                                    class="regular-text" required />
-                            <p class="description"><?php _e('Le nom exact de votre projet dans le système de gestion (fourni par votre développeur)', 'maintenance-timer-client'); ?></p>
+                            <p class="description"><?php _e('Le nom exact de votre projet dans l\'application Timer (généralement le nom de domaine du site).', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
                     
                     <tr>
-                        <th scope="row"><?php _e('Nom d\'utilisateur API', 'maintenance-timer-client'); ?></th>
+                        <th scope="row"><?php _e('Adresse email du compte Soreva', 'maintenance-timer-client'); ?></th>
                         <td>
-                            <input type="text" name="maintenance_timer_freelance_username" 
+                            <input type="email" name="maintenance_timer_freelance_username" 
                                    value="<?php echo esc_attr(get_option('maintenance_timer_freelance_username')); ?>" 
                                    class="regular-text" />
-                            <p class="description"><?php _e('Fourni par votre développeur', 'maintenance-timer-client'); ?></p>
+                            <p class="description"><?php _e('L\'adresse email utilisée pour vous connecter au Dashboard et à l\'application Timer.', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
                     
                     <tr>
-                        <th scope="row"><?php _e('Mot de passe API', 'maintenance-timer-client'); ?></th>
+                        <th scope="row"><?php _e('Mot de passe du compte Soreva', 'maintenance-timer-client'); ?></th>
                         <td>
                             <input type="password" name="maintenance_timer_freelance_password"
                                    value=""
                                    placeholder="<?php echo esc_attr($saved_password ? __('•••••••• (déjà configuré)', 'maintenance-timer-client') : ''); ?>"
                                    class="regular-text" autocomplete="new-password" />
-                            <p class="description"><?php _e('Fourni par votre développeur', 'maintenance-timer-client'); ?></p>
+                            <p class="description"><?php _e('Le mot de passe de votre compte Soreva (identique à celui du Dashboard et de l\'application Timer).', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
                     
@@ -190,8 +276,8 @@ class MaintenanceTimerClientPlugin {
                 <h4><?php _e('Configuration actuelle :', 'maintenance-timer-client'); ?></h4>
                 <ul>
                     <li><strong><?php _e('Nom du projet :', 'maintenance-timer-client'); ?></strong> "<?php echo esc_html($debug_info['project_name'] ?: 'Non configuré'); ?>"</li>
-                    <li><strong><?php _e('Nom d\'utilisateur API :', 'maintenance-timer-client'); ?></strong> <?php echo $debug_info['has_username'] ? '✅ Configuré' : '❌ Manquant'; ?></li>
-                    <li><strong><?php _e('Mot de passe API :', 'maintenance-timer-client'); ?></strong> <?php echo $debug_info['has_password'] ? '✅ Configuré' : '❌ Manquant'; ?></li>
+                    <li><strong><?php _e('Adresse email :', 'maintenance-timer-client'); ?></strong> <?php echo $debug_info['has_username'] ? '✅ Configuré' : '❌ Manquant'; ?></li>
+                    <li><strong><?php _e('Mot de passe compte :', 'maintenance-timer-client'); ?></strong> <?php echo $debug_info['has_password'] ? '✅ Configuré' : '❌ Manquant'; ?></li>
                     <li><strong><?php _e('URL API :', 'maintenance-timer-client'); ?></strong> <?php echo esc_html($debug_info['api_url']); ?></li>
                 </ul>
             </div>
@@ -358,6 +444,11 @@ class MaintenanceTimerClientPlugin {
         }
 
         if (!$maintenance_data || empty($maintenance_data['data'])) {
+            if ($this->last_sync_error === 'project_not_found') {
+                $this->show_project_not_found_page();
+                return;
+            }
+
             $this->show_sync_needed_page();
             return;
         }
@@ -398,13 +489,40 @@ class MaintenanceTimerClientPlugin {
                 <p><?php _e('Votre développeur vous fournira :', 'maintenance-timer-client'); ?></p>
                 <ul>
                     <li><strong><?php _e('Nom du projet :', 'maintenance-timer-client'); ?></strong> <?php _e('Le nom exact de votre site dans le système', 'maintenance-timer-client'); ?></li>
-                    <li><strong><?php _e('Identifiants API :', 'maintenance-timer-client'); ?></strong> <?php _e('Nom d\'utilisateur et mot de passe pour accéder aux données', 'maintenance-timer-client'); ?></li>
+                    <li><strong><?php _e('Identifiants Soreva :', 'maintenance-timer-client'); ?></strong> <?php _e('L\'adresse email et le mot de passe de votre compte Dashboard/Timer', 'maintenance-timer-client'); ?></li>
                 </ul>
             </div>
         </div>
         <?php
     }
     
+    /**
+     * Afficher la page quand le projet a été supprimé ou est introuvable
+     */
+    private function show_project_not_found_page() {
+        $project_name = get_option('maintenance_timer_project_name');
+        ?>
+        <div class="wrap">
+            <h1>⚠️ <?php _e('Projet introuvable', 'maintenance-timer-client'); ?></h1>
+
+            <div style="background: #fff; padding: 30px; border-radius: 8px; border-left: 5px solid #d63638; margin: 20px 0;">
+                <h2><?php _e('Projet supprimé ou introuvable', 'maintenance-timer-client'); ?></h2>
+                <p><?php printf(
+                    __('Le projet "%s" n\'existe plus dans l\'application Timer ou le nom configuré ne correspond pas.', 'maintenance-timer-client'),
+                    esc_html($project_name)
+                ); ?></p>
+                <p><?php _e('Les anciennes données de maintenance ont été effacées. Vérifiez le nom du projet dans la configuration ou contactez votre développeur.', 'maintenance-timer-client'); ?></p>
+
+                <p style="margin-top: 30px;">
+                    <a href="<?php echo admin_url('options-general.php?page=maintenance-timer-config'); ?>" class="button button-primary button-large">
+                        ⚙️ <?php _e('Vérifier la configuration', 'maintenance-timer-client'); ?>
+                    </a>
+                </p>
+            </div>
+        </div>
+        <?php
+    }
+
     /**
      * Afficher la page quand la synchronisation est nécessaire
      */
@@ -493,6 +611,12 @@ class MaintenanceTimerClientPlugin {
         }
 
         $post_id = $posts[0]->ID;
+        $sync_status = get_post_meta($post_id, '_sync_status', true);
+
+        if (in_array($sync_status, array('project_not_found', 'auth_failed'), true)) {
+            return false;
+        }
+
         $last_sync = (int) get_post_meta($post_id, '_last_sync', true);
         $is_fresh = $last_sync && (time() - $last_sync) < $this->cache_duration;
 
@@ -970,6 +1094,7 @@ class MaintenanceTimerClientPlugin {
         $password = get_option('maintenance_timer_freelance_password');
         
         if (empty($username) || empty($password)) {
+            $this->last_sync_error = 'auth_failed';
             return false;
         }
         
@@ -979,17 +1104,21 @@ class MaintenanceTimerClientPlugin {
             return $cached_token;
         }
         
+        $api_url = $this->get_api_base_url();
+
         // Authentification
-        $response = wp_remote_post($this->api_base_url . '?action=login', array(
+        $response = wp_remote_post($api_url . '?action=login', array(
             'timeout' => 30,
             'headers' => array('Content-Type' => 'application/json'),
             'body' => json_encode(array(
+                'email' => $username,
                 'username' => $username,
                 'password' => $password
             ))
         ));
         
         if (is_wp_error($response)) {
+            $this->last_sync_error = 'auth_failed';
             return false;
         }
         
@@ -1000,13 +1129,15 @@ class MaintenanceTimerClientPlugin {
             set_transient('maintenance_timer_auth_token', $data['token'], 20 * HOUR_IN_SECONDS);
             return $data['token'];
         }
-        
+
+        $this->last_sync_error = 'auth_failed';
         return false;
     }
     
     private function get_project_data() {
         $project_name = get_option('maintenance_timer_project_name');
         if (!$project_name) {
+            $this->last_sync_error = 'config_missing';
             $this->log_error('Nom du projet non configuré');
             return false;
         }
@@ -1017,8 +1148,10 @@ class MaintenanceTimerClientPlugin {
             return false;
         }
         
+        $api_url = $this->get_api_base_url();
+
         // Appel API
-        $response = wp_remote_get($this->api_base_url . '?action=projects', array(
+        $response = wp_remote_get($api_url . '?action=projects', array(
             'timeout' => 30,
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
@@ -1027,6 +1160,7 @@ class MaintenanceTimerClientPlugin {
         ));
         
         if (is_wp_error($response)) {
+            $this->last_sync_error = 'api_error';
             $this->log_error('Erreur réseau: ' . $response->get_error_message());
             return false;
         }
@@ -1037,6 +1171,7 @@ class MaintenanceTimerClientPlugin {
         $data = json_decode($body, true);
         
         if (!$data) {
+            $this->last_sync_error = 'api_error';
             $this->log_error('Réponse API invalide - JSON non valide');
             return false;
         }
@@ -1044,6 +1179,7 @@ class MaintenanceTimerClientPlugin {
         $this->log_error('Données décodées: ' . print_r($data, true));
         
         if (!isset($data['success']) || !$data['success']) {
+            $this->last_sync_error = 'api_error';
             $this->log_error('Erreur API: ' . ($data['message'] ?? 'Réponse non réussie'));
             $this->log_error('Structure complète de la réponse: ' . print_r($data, true));
             return false;
@@ -1058,6 +1194,7 @@ class MaintenanceTimerClientPlugin {
             $projects_data = $data['projects'];
             $this->log_error('Projets trouvés dans la clé "projects"');
         } else {
+            $this->last_sync_error = 'api_error';
             $this->log_error('Ni "data" ni "projects" trouvés dans la réponse');
             $this->log_error('Clés disponibles: ' . implode(', ', array_keys($data)));
             return false;
@@ -1078,6 +1215,7 @@ class MaintenanceTimerClientPlugin {
             }
         }
         
+        $this->last_sync_error = 'project_not_found';
         $this->log_error('Projet "' . $project_name . '" non trouvé dans la liste des projets disponibles');
         return false;
     }
@@ -1128,7 +1266,7 @@ class MaintenanceTimerClientPlugin {
             'project_name' => $project_name,
             'has_username' => !empty($username),
             'has_password' => !empty(get_option('maintenance_timer_freelance_password')),
-            'api_url' => $this->api_base_url,
+            'api_url' => $this->get_api_base_url(),
             'recent_logs' => array_slice($logs, -5), // 5 derniers logs
             'wp_debug' => defined('WP_DEBUG') && WP_DEBUG
         );
@@ -1178,6 +1316,13 @@ class MaintenanceTimerClientPlugin {
             
             if (empty($project_name)) {
                 $error_message .= ' ' . __('Nom du projet non configuré.', 'maintenance-timer-client');
+            } elseif ($this->last_sync_error === 'project_not_found') {
+                $error_message = sprintf(
+                    __('Projet "%s" introuvable ou supprimé. Les données en cache ont été effacées.', 'maintenance-timer-client'),
+                    $project_name
+                );
+            } elseif ($this->last_sync_error === 'auth_failed') {
+                $error_message .= ' ' . __('Échec de l\'authentification. Vérifiez votre email et mot de passe Soreva.', 'maintenance-timer-client');
             } elseif (isset($debug_info['error'])) {
                 $error_message .= ' ' . $debug_info['error'];
             } else {
@@ -1189,18 +1334,28 @@ class MaintenanceTimerClientPlugin {
     }
     
     public function sync_maintenance_data() {
+        $this->last_sync_error = null;
         $project_data = $this->get_project_data();
-        
+        $maintenance_post = $this->get_or_create_maintenance_post();
+
         if (!$project_data) {
+            if ($maintenance_post) {
+                if ($this->last_sync_error === 'project_not_found') {
+                    delete_post_meta($maintenance_post->ID, '_maintenance_data');
+                    delete_post_meta($maintenance_post->ID, '_last_sync');
+                    update_post_meta($maintenance_post->ID, '_sync_status', 'project_not_found');
+                } elseif ($this->last_sync_error === 'auth_failed') {
+                    update_post_meta($maintenance_post->ID, '_sync_status', 'auth_failed');
+                }
+            }
+
             return false;
         }
-        
-        // Chercher ou créer le post de maintenance
-        $maintenance_post = $this->get_or_create_maintenance_post();
         
         if ($maintenance_post) {
             update_post_meta($maintenance_post->ID, '_maintenance_data', $project_data);
             update_post_meta($maintenance_post->ID, '_last_sync', time());
+            delete_post_meta($maintenance_post->ID, '_sync_status');
             return true;
         }
         
