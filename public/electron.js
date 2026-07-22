@@ -410,7 +410,9 @@ function createMiniWindow() {
   miniWindow.loadURL(`${appStartUrl}#mini`);
 
   miniWindow.once('ready-to-show', () => {
-    miniWindow.show();
+    // showInactive : afficher le widget flottant sans voler le focus (évite le
+    // clignotement du bouton de la barre des tâches).
+    miniWindow.showInactive();
     if (lastMiniTimerSnapshot) {
       miniWindow.webContents.send('mini-timer-snapshot', lastMiniTimerSnapshot);
     }
@@ -1344,8 +1346,10 @@ ipcMain.handle('set-mini-timer-visibility', async (event, shouldShow) => {
   try {
     if (shouldShow) {
       const window = createMiniWindow();
-      if (window && !window.isDestroyed()) {
-        window.show();
+      // Ne montrer que si nécessaire : rappeler show() sur une fenêtre déjà visible
+      // refocalise et fait clignoter le bouton de la barre des tâches sous Windows.
+      if (window && !window.isDestroyed() && !window.isVisible()) {
+        window.showInactive();
       }
     } else if (miniWindow && !miniWindow.isDestroyed()) {
       miniWindow.hide();

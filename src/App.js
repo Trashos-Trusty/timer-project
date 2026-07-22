@@ -561,13 +561,22 @@ function App() {
     }
 
     const shouldShowMiniWindow = Boolean(isMiniTimerVisible && miniTimerSnapshot?.project);
-    api.setMiniTimerVisibility(shouldShowMiniWindow);
 
-    if (shouldShowMiniWindow && !miniTimerWasVisibleRef.current) {
-      api.minimizeMainWindow?.();
+    // Ne déclencher l'affichage/masquage que sur transition. Cet effet dépend de
+    // miniTimerSnapshot (rafraîchi chaque seconde) : sans ce garde, on rappellerait
+    // setMiniTimerVisibility(true) → window.show() toutes les secondes, ce qui fait
+    // clignoter le bouton de l'app dans la barre des tâches Windows.
+    // Le contenu du mini-timer, lui, continue d'être poussé par l'effet dédié
+    // updateMiniTimerSnapshot (ci-dessus), indépendant de la visibilité.
+    if (shouldShowMiniWindow !== miniTimerWasVisibleRef.current) {
+      api.setMiniTimerVisibility(shouldShowMiniWindow);
+
+      if (shouldShowMiniWindow) {
+        api.minimizeMainWindow?.();
+      }
+
+      miniTimerWasVisibleRef.current = shouldShowMiniWindow;
     }
-
-    miniTimerWasVisibleRef.current = shouldShowMiniWindow;
   }, [isMiniWindowMode, isMiniTimerVisible, miniTimerSnapshot]);
 
   useEffect(() => {
