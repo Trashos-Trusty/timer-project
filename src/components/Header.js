@@ -1,10 +1,8 @@
 import React from 'react';
 import {
   Clock,
-  Timer,
   Plus,
   LogOut,
-  Zap,
   Server,
   AlertTriangle,
   Download,
@@ -111,19 +109,6 @@ const Header = ({
                   : 'text-gray-600 hover:text-gray-900'
               } ${isTimerRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
               title={isTimerRunning ? 'Veuillez stopper le chronomètre avant de changer de mode' : ''}
-            >
-              <Timer className="w-4 h-4" />
-              <span className="font-medium">Minuteur</span>
-            </button>
-            <button
-              onClick={() => !isTimerRunning && onViewChange('maintenance')}
-              disabled={isTimerRunning}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
-                currentView === 'maintenance'
-                  ? 'bg-white text-primary-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              } ${isTimerRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={isTimerRunning ? 'Veuillez stopper la session en cours avant de changer de mode' : ''}
             >
               <Wrench className="w-4 h-4" />
               <span className="font-medium">Maintenance</span>

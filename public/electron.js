@@ -1137,54 +1137,39 @@ ipcMain.handle('delete-project', async (event, projectId) => {
   }
 });
 
-// ============================================================
-// Maintenance : forfaits par client (découplés des projets)
-// ============================================================
-ipcMain.handle('load-maintenance', async () => {
+// Partage portail client maintenance (/m/{token})
+ipcMain.handle('ensure-share-token', async (event, projectId) => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      throw new Error('Configuration API requise');
+    }
+    return await apiManager.ensureShareToken(projectId);
+  } catch (error) {
+    console.error('Erreur lors de la génération du lien de partage:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('load-pt-projects', async () => {
   try {
     if (!configManager || !configManager.isApiConfigured()) {
       return [];
     }
-    return await apiManager.loadMaintenance();
+    return await apiManager.loadPtProjects();
   } catch (error) {
-    console.error('Erreur lors du chargement de la maintenance:', error);
+    console.error('Erreur lors du chargement des projets Soreva:', error);
     throw error;
   }
 });
 
-ipcMain.handle('save-maintenance', async (event, maintenanceData) => {
+ipcMain.handle('link-pt-project', async (event, projectId, ptProjectId) => {
   try {
     if (!configManager || !configManager.isApiConfigured()) {
       throw new Error('Configuration API requise');
     }
-    return await apiManager.saveMaintenance(maintenanceData);
+    return await apiManager.linkPtProject(projectId, ptProjectId);
   } catch (error) {
-    console.error('Erreur lors de la sauvegarde de la maintenance:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('log-maintenance', async (event, logData) => {
-  try {
-    if (!configManager || !configManager.isApiConfigured()) {
-      throw new Error('Configuration API requise');
-    }
-    return await apiManager.logMaintenance(logData);
-  } catch (error) {
-    console.error('Erreur lors de l\'enregistrement de la maintenance:', error);
-    throw error;
-  }
-});
-
-ipcMain.handle('delete-maintenance', async (event, payload) => {
-  try {
-    if (!configManager || !configManager.isApiConfigured()) {
-      throw new Error('Configuration API requise');
-    }
-    await apiManager.deleteMaintenance(payload);
-    return true;
-  } catch (error) {
-    console.error('Erreur lors de la suppression de la maintenance:', error);
+    console.error('Erreur lors du rattachement au projet Soreva:', error);
     throw error;
   }
 });

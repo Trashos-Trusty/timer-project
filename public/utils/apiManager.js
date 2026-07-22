@@ -518,66 +518,45 @@ class ApiManager {
     }, 'deleteProject');
   }
 
-  // ============================================================
-  // Maintenance : forfaits par client, découplés des projets
-  // ============================================================
-
-  // Charger tous les forfaits de maintenance du freelance
-  async loadMaintenance() {
+  // Garantir/obtenir le jeton de partage d'un projet (portail client maintenance /m/{token})
+  async ensureShareToken(projectId) {
     return this.queueOperation(async () => {
-      const response = await this.makeSecureRequest('maintenance', {
+      const response = await this.makeSecureRequest('ensure-share-token', {
+        method: 'POST',
+        body: JSON.stringify({ id: projectId })
+      });
+      if (response.success) {
+        return { clientToken: response.clientToken, portalUrl: response.portalUrl };
+      }
+      throw new Error(response.message || 'Erreur génération du lien');
+    }, 'ensureShareToken');
+  }
+
+  // Lister les projets Project-tracker du freelance (pour rattachement)
+  async loadPtProjects() {
+    return this.queueOperation(async () => {
+      const response = await this.makeSecureRequest('pt-projects', {
         method: 'GET'
       });
       if (response.success) {
         return response.data || [];
       }
-      throw new Error(response.message || 'Erreur chargement maintenance');
-    }, 'loadMaintenance');
+      throw new Error(response.message || 'Erreur chargement des projets Soreva');
+    }, 'loadPtProjects');
   }
 
-  // Créer ou mettre à jour le forfait de maintenance d'un client
-  async saveMaintenance(maintenanceData) {
+  // Rattacher (ou délier si ptProjectId null/0) une enveloppe timer à un projet PT
+  async linkPtProject(projectId, ptProjectId) {
     return this.queueOperation(async () => {
-      const response = await this.makeSecureRequest('maintenance', {
+      const response = await this.makeSecureRequest('link-pt-project', {
         method: 'POST',
-        body: JSON.stringify(maintenanceData)
+        body: JSON.stringify({ id: projectId, ptProjectId: ptProjectId || null })
       });
       if (response.success) {
-        return response.data;
+        return { ptProjectId: response.ptProjectId ?? null };
       }
-      throw new Error(response.message || 'Erreur sauvegarde maintenance');
-    }, 'saveMaintenance');
-  }
-
-  // Enregistrer une session de maintenance (consomme du temps)
-  async logMaintenance(logData) {
-    return this.queueOperation(async () => {
-      const response = await this.makeSecureRequest('maintenance-log', {
-        method: 'POST',
-        body: JSON.stringify(logData)
-      });
-      if (response.success) {
-        return response.data;
-      }
-      throw new Error(response.message || 'Erreur enregistrement maintenance');
-    }, 'logMaintenance');
-  }
-
-  // Supprimer un forfait de maintenance
-  async deleteMaintenance(payload) {
-    return this.queueOperation(async () => {
-      const body = typeof payload === 'object' && payload !== null
-        ? payload
-        : { id: payload };
-      const response = await this.makeSecureRequest('maintenance', {
-        method: 'DELETE',
-        body: JSON.stringify(body)
-      });
-      if (response.success) {
-        return true;
-      }
-      throw new Error(response.message || 'Erreur suppression maintenance');
-    }, 'deleteMaintenance');
+      throw new Error(response.message || 'Erreur de rattachement');
+    }, 'linkPtProject');
   }
 
   // Envoyer un feedback utilisateur durant la bêta
