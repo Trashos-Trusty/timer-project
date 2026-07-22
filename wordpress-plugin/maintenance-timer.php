@@ -3,7 +3,7 @@
  * Plugin Name: Maintenance Timer Client
  * Plugin URI: https://timer.soreva.app
  * Description: Affiche les informations de maintenance de votre site web
- * Version: 2.1.0
+ * Version: 2.2.0
  * Author: Soreva
  * License: GPL v2 or later
  * Text Domain: maintenance-timer-client
@@ -16,7 +16,7 @@ class MaintenanceTimerClientPlugin {
 
     const DEFAULT_API_URL = 'https://timer.soreva.app/api-timer.php';
 
-    private $plugin_version = '2.1.0';
+    private $plugin_version = '2.2.0';
     private $cache_duration = 300; // 5 minutes
     private $last_sync_error = null;
     
@@ -95,6 +95,9 @@ class MaintenanceTimerClientPlugin {
         register_setting('maintenance_timer_settings', 'maintenance_timer_api_url', array(
             'sanitize_callback' => array($this, 'sanitize_api_url_option')
         ));
+        register_setting('maintenance_timer_settings', 'maintenance_timer_share_token', array(
+            'sanitize_callback' => array($this, 'sanitize_share_token_option')
+        ));
         register_setting('maintenance_timer_settings', 'maintenance_timer_project_name', array(
             'sanitize_callback' => array($this, 'sanitize_project_name_option')
         ));
@@ -148,6 +151,31 @@ class MaintenanceTimerClientPlugin {
         }
 
         return $url;
+    }
+
+    public function sanitize_share_token_option($token) {
+        $token = strtolower(trim((string) $token));
+
+        if ($token === '') {
+            return '';
+        }
+
+        // Jeton attendu : 64 caractères hexadécimaux (bin2hex(random_bytes(32))).
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+            add_settings_error(
+                'maintenance_timer_share_token',
+                'invalid_token',
+                __('Le jeton de partage est invalide (64 caractères hexadécimaux attendus). Valeur ignorée.', 'maintenance-timer-client')
+            );
+            return get_option('maintenance_timer_share_token', '');
+        }
+
+        $previous = get_option('maintenance_timer_share_token');
+        if ($previous !== $token) {
+            $this->invalidate_auth_token();
+        }
+
+        return $token;
     }
 
     public function sanitize_project_name_option($project_name) {
@@ -207,25 +235,45 @@ class MaintenanceTimerClientPlugin {
                     </tr>
 
                     <tr>
+                        <th scope="row"><?php _e('Jeton de partage', 'maintenance-timer-client'); ?> <span style="color:#00a32a;">★</span></th>
+                        <td>
+                            <input type="text" name="maintenance_timer_share_token"
+                                   value="<?php echo esc_attr(get_option('maintenance_timer_share_token')); ?>"
+                                   class="regular-text" autocomplete="off" pattern="[a-fA-F0-9]{64}" />
+                            <p class="description">
+                                <strong><?php _e('Méthode recommandée.', 'maintenance-timer-client'); ?></strong>
+                                <?php _e('Dans l\'application Timer, ouvrez le projet puis la carte « Affichage côté client » pour générer/copier le lien de partage. Collez ici uniquement le jeton (la suite de caractères après /m/). Ce jeton donne un accès en lecture seule à CE projet uniquement : aucun mot de passe n\'est nécessaire.', 'maintenance-timer-client'); ?>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <details style="margin: 10px 0 20px;">
+                    <summary style="cursor:pointer; font-weight:600;"><?php _e('Méthode héritée (email + mot de passe) — déconseillée', 'maintenance-timer-client'); ?></summary>
+                    <p class="description" style="max-width:640px; margin:10px 0;">
+                        <?php _e('Cette méthode enregistre votre mot de passe de compte Soreva dans la base de ce site WordPress. Préférez le jeton de partage ci-dessus. Laissez ces champs vides si vous utilisez un jeton.', 'maintenance-timer-client'); ?>
+                    </p>
+                    <table class="form-table">
+                    <tr>
                         <th scope="row"><?php _e('Nom de votre projet', 'maintenance-timer-client'); ?></th>
                         <td>
-                            <input type="text" name="maintenance_timer_project_name" 
-                                   value="<?php echo esc_attr(get_option('maintenance_timer_project_name')); ?>" 
-                                   class="regular-text" required />
+                            <input type="text" name="maintenance_timer_project_name"
+                                   value="<?php echo esc_attr(get_option('maintenance_timer_project_name')); ?>"
+                                   class="regular-text" />
                             <p class="description"><?php _e('Le nom exact de votre projet dans l\'application Timer (généralement le nom de domaine du site).', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
-                    
+
                     <tr>
                         <th scope="row"><?php _e('Adresse email du compte Soreva', 'maintenance-timer-client'); ?></th>
                         <td>
-                            <input type="email" name="maintenance_timer_freelance_username" 
-                                   value="<?php echo esc_attr(get_option('maintenance_timer_freelance_username')); ?>" 
+                            <input type="email" name="maintenance_timer_freelance_username"
+                                   value="<?php echo esc_attr(get_option('maintenance_timer_freelance_username')); ?>"
                                    class="regular-text" />
                             <p class="description"><?php _e('L\'adresse email utilisée pour vous connecter au Dashboard et à l\'application Timer.', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
-                    
+
                     <tr>
                         <th scope="row"><?php _e('Mot de passe du compte Soreva', 'maintenance-timer-client'); ?></th>
                         <td>
@@ -236,7 +284,10 @@ class MaintenanceTimerClientPlugin {
                             <p class="description"><?php _e('Le mot de passe de votre compte Soreva (identique à celui du Dashboard et de l\'application Timer).', 'maintenance-timer-client'); ?></p>
                         </td>
                     </tr>
-                    
+                    </table>
+                </details>
+
+                <table class="form-table">
                     <tr>
                         <th scope="row"><?php _e('Synchronisation automatique', 'maintenance-timer-client'); ?></th>
                         <td>
@@ -420,12 +471,17 @@ class MaintenanceTimerClientPlugin {
      * Page dashboard de maintenance
      */
     public function maintenance_dashboard_page() {
-        // Vérifier si le plugin est configuré
+        // Vérifier si le plugin est configuré : soit un jeton de partage (recommandé),
+        // soit la méthode héritée complète (projet + email + mot de passe).
+        $share_token = get_option('maintenance_timer_share_token');
         $project_name = get_option('maintenance_timer_project_name');
         $username = get_option('maintenance_timer_freelance_username');
         $password = get_option('maintenance_timer_freelance_password');
-        
-        if (empty($project_name) || empty($username) || empty($password)) {
+
+        $configured = !empty($share_token)
+            || (!empty($project_name) && !empty($username) && !empty($password));
+
+        if (!$configured) {
             $this->show_configuration_needed_page();
             return;
         }
@@ -1126,7 +1182,9 @@ class MaintenanceTimerClientPlugin {
         $data = json_decode($body, true);
         
         if (isset($data['success']) && $data['success'] && isset($data['token'])) {
-            set_transient('maintenance_timer_auth_token', $data['token'], 20 * HOUR_IN_SECONDS);
+            // Le JWT expire côté serveur au bout de 2h : on met en cache sous cette
+            // durée (90 min) pour éviter de conserver un jeton déjà périmé.
+            set_transient('maintenance_timer_auth_token', $data['token'], 90 * MINUTE_IN_SECONDS);
             return $data['token'];
         }
 
@@ -1135,22 +1193,76 @@ class MaintenanceTimerClientPlugin {
     }
     
     private function get_project_data() {
+        // Méthode recommandée : jeton de partage scopé (lecture seule, un seul projet,
+        // aucun mot de passe, aucune donnée d'un autre client).
+        $share_token = get_option('maintenance_timer_share_token');
+        if (!empty($share_token)) {
+            return $this->get_project_data_by_token($share_token);
+        }
+
+        // Méthode héritée : email + mot de passe, filtre par nom de projet.
+        return $this->get_project_data_legacy();
+    }
+
+    /**
+     * Récupère les données d'UN projet via son jeton de partage (endpoint public
+     * en lecture seule). Ne renvoie jamais les données d'un autre projet/client.
+     */
+    private function get_project_data_by_token($share_token) {
+        $api_url = $this->get_api_base_url();
+
+        $response = wp_remote_get(
+            $api_url . '?action=maintenance-public&token=' . rawurlencode($share_token),
+            array(
+                'timeout' => 30,
+                'headers' => array('Content-Type' => 'application/json'),
+            )
+        );
+
+        if (is_wp_error($response)) {
+            $this->last_sync_error = 'api_error';
+            $this->log_error('Erreur réseau lors de la récupération par jeton');
+            return false;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($code === 404) {
+            $this->last_sync_error = 'project_not_found';
+            return false;
+        }
+
+        if (!is_array($data) || empty($data['success']) || empty($data['data'])) {
+            $this->last_sync_error = 'api_error';
+            $this->log_error('Réponse maintenance-public invalide (code ' . $code . ')');
+            return false;
+        }
+
+        return $data['data'];
+    }
+
+    /**
+     * Méthode héritée : authentification par email + mot de passe, puis filtre du
+     * projet par nom parmi la liste renvoyée. Conservée pour compatibilité ; à
+     * migrer vers le jeton de partage.
+     */
+    private function get_project_data_legacy() {
         $project_name = get_option('maintenance_timer_project_name');
         if (!$project_name) {
             $this->last_sync_error = 'config_missing';
             $this->log_error('Nom du projet non configuré');
             return false;
         }
-        
+
         $token = $this->authenticate_api();
         if (!$token) {
             $this->log_error('Échec de l\'authentification API');
             return false;
         }
-        
+
         $api_url = $this->get_api_base_url();
 
-        // Appel API
         $response = wp_remote_get($api_url . '?action=projects', array(
             'timeout' => 30,
             'headers' => array(
@@ -1158,65 +1270,50 @@ class MaintenanceTimerClientPlugin {
                 'Content-Type' => 'application/json'
             )
         ));
-        
+
         if (is_wp_error($response)) {
             $this->last_sync_error = 'api_error';
-            $this->log_error('Erreur réseau: ' . $response->get_error_message());
+            $this->log_error('Erreur réseau lors du chargement des projets');
             return false;
         }
-        
-        $body = wp_remote_retrieve_body($response);
-        $this->log_error('Réponse API brute: ' . $body);
-        
-        $data = json_decode($body, true);
-        
-        if (!$data) {
+
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+
+        if (!is_array($data) || empty($data['success'])) {
             $this->last_sync_error = 'api_error';
-            $this->log_error('Réponse API invalide - JSON non valide');
+            $this->log_error('Réponse API projets invalide');
             return false;
         }
-        
-        $this->log_error('Données décodées: ' . print_r($data, true));
-        
-        if (!isset($data['success']) || !$data['success']) {
-            $this->last_sync_error = 'api_error';
-            $this->log_error('Erreur API: ' . ($data['message'] ?? 'Réponse non réussie'));
-            $this->log_error('Structure complète de la réponse: ' . print_r($data, true));
-            return false;
-        }
-        
-        // Vérifier si la réponse contient les projets dans 'data' ou 'projects'
+
         $projects_data = null;
         if (isset($data['data']) && is_array($data['data'])) {
             $projects_data = $data['data'];
-            $this->log_error('Projets trouvés dans la clé "data"');
         } elseif (isset($data['projects']) && is_array($data['projects'])) {
             $projects_data = $data['projects'];
-            $this->log_error('Projets trouvés dans la clé "projects"');
         } else {
             $this->last_sync_error = 'api_error';
-            $this->log_error('Ni "data" ni "projects" trouvés dans la réponse');
-            $this->log_error('Clés disponibles: ' . implode(', ', array_keys($data)));
+            $this->log_error('Aucune liste de projets dans la réponse');
             return false;
         }
-        
-        $this->log_error('Nombre de projets trouvés: ' . count($projects_data));
-        
-        // Debug : lister tous les projets disponibles
-        $available_projects = array_map(function($p) { return $p['name'] ?? 'Nom manquant'; }, $projects_data);
-        $this->log_error('Projets disponibles: ' . implode(', ', $available_projects));
-        $this->log_error('Projet recherché: "' . $project_name . '"');
-        
-        // Chercher le projet
+
+        // Chercher le projet par nom, puis ne conserver QUE ses champs utiles :
+        // on ne stocke jamais les autres projets ni leurs jetons de portail.
         foreach ($projects_data as $project) {
             if (isset($project['name']) && strcasecmp($project['name'], $project_name) === 0) {
-                $this->log_error('Projet trouvé !');
-                return $project;
+                return array(
+                    'name' => $project['name'] ?? '',
+                    'clientName' => $project['clientName'] ?? '',
+                    'totalTime' => $project['totalTime'] ?? 0,
+                    'usedTime' => $project['usedTime'] ?? 0,
+                    'status' => $project['status'] ?? 'active',
+                    'lastSaved' => $project['lastSaved'] ?? null,
+                    'workSessions' => $project['workSessions'] ?? array(),
+                );
             }
         }
-        
+
         $this->last_sync_error = 'project_not_found';
-        $this->log_error('Projet "' . $project_name . '" non trouvé dans la liste des projets disponibles');
+        $this->log_error('Projet configuré introuvable dans la liste');
         return false;
     }
     
@@ -1235,22 +1332,26 @@ class MaintenanceTimerClientPlugin {
     }
     
     /**
-     * Logger une erreur pour le debug
+     * Logger une erreur pour le debug.
+     * Ne journalise (ni dans error_log, ni en base) QUE si WP_DEBUG est actif :
+     * en production, aucun log n'est écrit ni conservé. Les messages ne doivent
+     * jamais contenir de données sensibles (jetons, réponses API brutes…).
      */
     private function log_error($message) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('[Maintenance Timer Client] ' . $message);
+        if (!defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
         }
-        
-        // Stocker aussi en option temporaire pour le debug AJAX
+
+        error_log('[Maintenance Timer Client] ' . $message);
+
+        // Journal en base uniquement en mode debug, pour l'écran de diagnostic.
         $logs = get_option('maintenance_timer_debug_logs', array());
         $logs[] = date('Y-m-d H:i:s') . ' - ' . $message;
-        
-        // Garder seulement les 20 derniers logs
+
         if (count($logs) > 20) {
             $logs = array_slice($logs, -20);
         }
-        
+
         update_option('maintenance_timer_debug_logs', $logs);
     }
     
@@ -1302,7 +1403,13 @@ class MaintenanceTimerClientPlugin {
     
     public function ajax_sync_maintenance_data() {
         check_ajax_referer('maintenance_timer_nonce', 'nonce');
-        
+
+        // La synchronisation déclenche un appel API : la réserver aux utilisateurs
+        // pouvant accéder au tableau de bord de maintenance (capacité 'read').
+        if (!current_user_can('read')) {
+            wp_send_json_error(array('message' => __('Permissions insuffisantes', 'maintenance-timer-client')));
+        }
+
         $result = $this->sync_maintenance_data();
         
         if ($result) {

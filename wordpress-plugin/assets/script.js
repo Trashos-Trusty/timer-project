@@ -46,7 +46,6 @@ jQuery(document).ready(function($) {
                 }
             },
             error: function(xhr, status, error) {
-                console.error('Erreur AJAX:', error);
                 showNotification('error', 'Erreur de connexion. Veuillez réessayer.');
             },
             complete: function() {
@@ -229,28 +228,6 @@ jQuery(document).ready(function($) {
     improveAccessibility();
     
     /**
-     * Debug mode - afficher des informations en console si en mode debug
-     */
-    if (window.location.href.indexOf('debug=1') !== -1) {
-        console.log('🔧 Maintenance Timer Client - Mode Debug');
-        console.log('AJAX URL:', AJAX_URL);
-        console.log('Nonce:', NONCE);
-        
-        // Logger les appels AJAX
-        $(document).ajaxSend(function(event, xhr, settings) {
-            if (settings.url === AJAX_URL) {
-                console.log('📡 AJAX Send:', settings.data);
-            }
-        });
-        
-        $(document).ajaxComplete(function(event, xhr, settings) {
-            if (settings.url === AJAX_URL) {
-                console.log('✅ AJAX Complete:', xhr.responseText);
-            }
-        });
-    }
-    
-    /**
      * Easter egg - Animation spéciale si tout va bien
      */
     if ($('.status-indicator.online').length && Math.random() < 0.1) {
@@ -283,18 +260,5 @@ window.MaintenanceTimer = {
      */
     sync: function() {
         jQuery('.sync-maintenance-btn').first().click();
-    },
-    
-    /**
-     * Afficher les informations de debug
-     */
-    debug: function() {
-        console.table({
-            'Plugin Version': '2.0.0',
-            'AJAX URL': maintenance_timer_ajax.ajax_url,
-            'User Agent': navigator.userAgent,
-            'Screen Resolution': screen.width + 'x' + screen.height,
-            'Current Time': new Date().toISOString()
-        });
     }
-}; 
+};

@@ -515,6 +515,95 @@ if ($action === 'health' && $method === 'GET') {
     ], 200);
 }
 
+// ======================= ROUTE : MAINTENANCE PUBLIQUE (lecture seule, sans auth) =======================
+// Consommée par le plugin WordPress client. Lit UNIQUEMENT le projet identifié par
+// son jeton de partage (client_token, 256 bits, cf. ensure-share-token). Aucune
+// donnée d'un autre projet ni identifiant freelance n'est requis ou exposé : même
+// modèle de confiance que le portail /m/{token}. Remplace l'ancienne méthode où le
+// plugin stockait l'email + mot de passe complet du compte Soreva.
+if ($action === 'maintenance-public' && $method === 'GET') {
+    timer_enforce_rate_limit('GET maintenance-public', 120, 3600, 'ip');
+
+    $rawToken = $_GET['token'] ?? '';
+    $clientToken = is_scalar($rawToken) ? trim((string) $rawToken) : '';
+    // Jeton attendu : 64 caractères hexadécimaux (bin2hex(random_bytes(32))).
+    if ($clientToken === '' || !preg_match('/^[a-f0-9]{64}$/i', $clientToken)) {
+        timer_fail('Jeton invalide', 400);
+    }
+    $clientToken = strtolower($clientToken);
+
+    $pdo = getConnection();
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT id, org_id, name, facture_client_id, client_id,
+                    total_time_allocated, status, last_activity, created_at
+               FROM timer_projects WHERE client_token = ? LIMIT 1'
+        );
+        $stmt->execute([$clientToken]);
+        $project = $stmt->fetch();
+        if (!$project) {
+            timer_fail('Projet non trouvé', 404);
+        }
+
+        $projectOrgId = $project['org_id'];
+
+        // Nom du client (facture_clients puis timer_clients), scoping org.
+        $clientName = '';
+        if (!empty($project['facture_client_id'])) {
+            $cs = $pdo->prepare('SELECT name FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+            $cs->execute([$project['facture_client_id'], $projectOrgId]);
+            $c = $cs->fetch();
+            if ($c) { $clientName = $c['name'] ?? ''; }
+        }
+        if ($clientName === '' && !empty($project['client_id'])) {
+            $cs = $pdo->prepare('SELECT name FROM timer_clients WHERE id = ? AND org_id = ? LIMIT 1');
+            $cs->execute([$project['client_id'], $projectOrgId]);
+            $c = $cs->fetch();
+            if ($c) { $clientName = $c['name'] ?? ''; }
+        }
+
+        // Sessions + temps utilisé (mêmes calculs que la route projects).
+        $logsStmt = $pdo->prepare(
+            'SELECT session_start, session_end, session_date, duration_seconds, description
+               FROM timer_project_logs WHERE project_id = ? AND org_id = ? ORDER BY sync_timestamp ASC'
+        );
+        $logsStmt->execute([$project['id'], $projectOrgId]);
+        $logs = $logsStmt->fetchAll();
+
+        $workSessions = [];
+        $usedTime = 0;
+        foreach ($logs as $log) {
+            $duration = intval($log['duration_seconds'] ?? 0);
+            $usedTime += $duration;
+            $workSessions[] = [
+                'subject' => $log['description'] ?? '',
+                'startTime' => $log['session_start'],
+                'endTime' => $log['session_end'],
+                'duration' => $duration,
+                'date' => !empty($log['session_date'])
+                    ? $log['session_date']
+                    : ($log['session_start'] ? date('Y-m-d', strtotime($log['session_start'])) : date('Y-m-d')),
+            ];
+        }
+
+        timer_json([
+            'success' => true,
+            'data' => [
+                'name' => $project['name'],
+                'clientName' => $clientName,
+                'totalTime' => intval($project['total_time_allocated'] ?? 0),
+                'usedTime' => $usedTime,
+                'status' => $project['status'] ?? 'active',
+                'lastSaved' => $project['last_activity'] ?? $project['created_at'],
+                'workSessions' => $workSessions,
+            ],
+        ]);
+    } catch (Exception $e) {
+        timer_log('Erreur maintenance-public: ' . $e->getMessage());
+        timer_fail('Erreur de récupération', 500);
+    }
+}
+
 // ======================= GUARD : routes protegees =======================
 if (!$coreUserId || !$orgId) {
     if (!in_array($action, ['health', 'login'])) {
