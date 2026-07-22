@@ -3,6 +3,7 @@ import Header from './components/Header';
 import ProjectList from './components/ProjectList';
 import Timer from './components/Timer';
 import Stopwatch from './components/Stopwatch';
+import MaintenancePanel from './components/MaintenancePanel';
 import ProjectModal from './components/ProjectModal';
 import LoginModal from './components/LoginModal';
 import ApiConfigModal from './components/ApiConfigModal';
@@ -61,6 +62,7 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [isStopwatchRunning, setIsStopwatchRunning] = useState(false);
+  const [isMaintenanceRunning, setIsMaintenanceRunning] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [miniTimerSnapshot, setMiniTimerSnapshot] = useState(null);
@@ -1110,7 +1112,7 @@ function App() {
     }
   };
 
-  const isInteractionLocked = isTimerRunning || isStopwatchRunning;
+  const isInteractionLocked = isTimerRunning || isStopwatchRunning || isMaintenanceRunning;
 
   if (isMiniWindowMode) {
     return (
@@ -1178,7 +1180,7 @@ function App() {
 
         {/* Zone principale */}
         <div className="flex-1 flex flex-col">
-          {currentView === 'timer' ? (
+          {currentView === 'timer' && (
             <Timer
               ref={timerRef}
               selectedProject={selectedProject}
@@ -1191,7 +1193,14 @@ function App() {
               canShowMiniTimer={canShowMiniTimer}
               onSessionExpired={handleSessionExpired}
             />
-          ) : (
+          )}
+          {currentView === 'maintenance' && (
+            <MaintenancePanel
+              disabled={isSaving}
+              onRunningChange={setIsMaintenanceRunning}
+            />
+          )}
+          {currentView === 'stopwatch' && (
             <Stopwatch onRunningChange={setIsStopwatchRunning} />
           )}
         </div>

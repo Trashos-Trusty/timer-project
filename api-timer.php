@@ -854,24 +854,33 @@ if ($action === 'projects' && $method === 'DELETE') {
     }
 
     $id = $projectData['id'];
-    $isNumeric = is_numeric($id) && (is_int($id) || ctype_digit((string) $id));
-    $isProjectUuid = is_string($id) && preg_match('/^proj_[a-f0-9]{32}$/i', $id);
+    $idString = is_scalar($id) ? (string) $id : '';
+    $isNumeric = is_numeric($id) && (is_int($id) || ctype_digit($idString));
 
-    if (!$isNumeric && !$isProjectUuid) {
+    // On accepte tout identifiant scalaire non vide : la route GET expose
+    // `project_uuid ?? id`, donc le client peut renvoyer aussi bien un UUID
+    // (`proj_...`), une clé primaire numérique, ou un identifiant hérité de
+    // TrustyTimer (UUID numérique/legacy). On ne devine plus la colonne à partir
+    // du format : on cherche sur les deux colonnes à la fois.
+    if ($idString === '') {
         timer_fail('ID du projet invalide', 400);
     }
 
     try {
+        // Recherche sur project_uuid OU id pour couvrir tous les formats
+        // d'identifiant, quel que soit celui exposé par la route GET.
         if ($isNumeric) {
             $stmt = $pdo->prepare(
-                'DELETE FROM timer_projects WHERE freelance_id = ? AND org_id = ? AND id = ?'
+                'DELETE FROM timer_projects
+                 WHERE freelance_id = ? AND org_id = ? AND (project_uuid = ? OR id = ?)'
             );
-            $stmt->execute([$freelanceId, $orgId, (int) $id]);
+            $stmt->execute([$freelanceId, $orgId, $idString, (int) $id]);
         } else {
             $stmt = $pdo->prepare(
-                'DELETE FROM timer_projects WHERE freelance_id = ? AND org_id = ? AND project_uuid = ?'
+                'DELETE FROM timer_projects
+                 WHERE freelance_id = ? AND org_id = ? AND project_uuid = ?'
             );
-            $stmt->execute([$freelanceId, $orgId, $id]);
+            $stmt->execute([$freelanceId, $orgId, $idString]);
         }
 
         if ($stmt->rowCount() > 0) {
@@ -882,6 +891,294 @@ if ($action === 'projects' && $method === 'DELETE') {
     } catch (Exception $e) {
         timer_log('Erreur suppression projet: ' . $e->getMessage());
         timer_fail('Erreur suppression', 500);
+    }
+}
+
+// ======================= HELPERS : MAINTENANCE =======================
+/**
+ * Base URL du portail client (Project Tracker : /c/{token}).
+ * Surcharge possible via SOREVA_CLIENT_PORTAL_BASE ou secrets['client_portal_base'].
+ */
+function timer_client_portal_base(): string
+{
+    global $TIMER_SECRETS;
+    $base = getenv('SOREVA_CLIENT_PORTAL_BASE');
+    if (($base === false || $base === '') && isset($TIMER_SECRETS['client_portal_base'])) {
+        $base = $TIMER_SECRETS['client_portal_base'];
+    }
+    if ($base === false || $base === '') {
+        $base = 'https://project.soreva.app';
+    }
+    return rtrim((string) $base, '/');
+}
+
+/**
+ * Formate une ligne timer_maintenance pour l'API (camelCase + temps restant).
+ */
+function timer_maintenance_format(array $row, string $clientName = '', string $clientCompany = ''): array
+{
+    $total = (int) ($row['total_seconds_allocated'] ?? 0);
+    $used = max(0, (int) ($row['used_seconds'] ?? 0));
+    $remaining = max(0, $total - $used);
+    $token = $row['client_token'] ?? null;
+
+    return [
+        'id' => (int) $row['id'],
+        'factureClientId' => (int) ($row['facture_client_id'] ?? 0),
+        'clientName' => $clientName,
+        'company' => $clientCompany,
+        'label' => $row['label'] ?? 'Maintenance',
+        'totalSeconds' => $total,
+        'usedSeconds' => $used,
+        'remainingSeconds' => $remaining,
+        'status' => $row['status'] ?? 'active',
+        'clientToken' => $token,
+        'portalUrl' => $token ? (timer_client_portal_base() . '/m/' . $token) : null,
+        'lastActivity' => $row['last_activity'] ?? null,
+    ];
+}
+
+/**
+ * Retourne [name, company] du client partagé (facture_clients) ou ['',''].
+ */
+function timer_maintenance_client_info(PDO $pdo, int $factureClientId, string $orgId): array
+{
+    if ($factureClientId <= 0) {
+        return ['', ''];
+    }
+    $stmt = $pdo->prepare('SELECT name, company FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+    $stmt->execute([$factureClientId, $orgId]);
+    $client = $stmt->fetch();
+    if (!$client) {
+        return ['', ''];
+    }
+    return [$client['name'] ?? '', $client['company'] ?? ''];
+}
+
+// ======================= ROUTE : GET MAINTENANCE =======================
+if ($action === 'maintenance' && $method === 'GET') {
+    timer_enforce_rate_limit('GET maintenance', 600, 3600, 'identity_or_ip', $coreUserId);
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT * FROM timer_maintenance WHERE freelance_id = ? AND org_id = ? ORDER BY updated_at DESC'
+        );
+        $stmt->execute([$freelanceId, $orgId]);
+        $rows = $stmt->fetchAll();
+
+        $items = [];
+        foreach ($rows as $row) {
+            [$clientName, $clientCompany] = timer_maintenance_client_info($pdo, (int) $row['facture_client_id'], $orgId);
+            $items[] = timer_maintenance_format($row, $clientName, $clientCompany);
+        }
+
+        timer_json(['success' => true, 'data' => $items]);
+    } catch (Exception $e) {
+        timer_log('Erreur chargement maintenance: ' . $e->getMessage());
+        timer_fail('Erreur chargement maintenance', 500);
+    }
+}
+
+// ======================= ROUTE : SAVE MAINTENANCE (POST) =======================
+// Cree ou met a jour le forfait de maintenance d'un client (1 seul par client).
+if ($action === 'maintenance' && $method === 'POST') {
+    timer_enforce_rate_limit('POST maintenance', 300, 3600, 'identity_or_ip', $coreUserId);
+
+    $rawInput = file_get_contents('php://input');
+    $data = json_decode($rawInput, true);
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $data === null)) {
+        timer_fail('JSON invalide', 400);
+    }
+    if (!$data || !isset($data['factureClientId'])) {
+        timer_fail('Client manquant', 400);
+    }
+
+    $factureClientId = (int) $data['factureClientId'];
+    if ($factureClientId <= 0) {
+        timer_fail('Client invalide', 400);
+    }
+
+    $label = isset($data['label']) && trim((string) $data['label']) !== ''
+        ? trim((string) $data['label'])
+        : 'Maintenance';
+    $totalSeconds = isset($data['totalSeconds']) ? max(0, (int) $data['totalSeconds']) : 0;
+    $status = in_array(($data['status'] ?? 'active'), ['active', 'paused', 'depleted'], true)
+        ? $data['status']
+        : 'active';
+
+    try {
+        // Le client doit appartenir a l'org
+        $stmt = $pdo->prepare('SELECT id FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+        $stmt->execute([$factureClientId, $orgId]);
+        if (!$stmt->fetch()) {
+            timer_fail('Client introuvable', 404);
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT * FROM timer_maintenance WHERE org_id = ? AND facture_client_id = ? LIMIT 1'
+        );
+        $stmt->execute([$orgId, $factureClientId]);
+        $existing = $stmt->fetch();
+
+        if ($existing) {
+            $stmt = $pdo->prepare(
+                'UPDATE timer_maintenance
+                    SET label = ?, total_seconds_allocated = ?, status = ?, updated_at = NOW()
+                  WHERE id = ? AND org_id = ?'
+            );
+            $stmt->execute([$label, $totalSeconds, $status, $existing['id'], $orgId]);
+            $maintenanceId = (int) $existing['id'];
+        } else {
+            $clientToken = bin2hex(random_bytes(32));
+            $stmt = $pdo->prepare(
+                'INSERT INTO timer_maintenance (
+                    org_id, core_user_id, freelance_id, facture_client_id,
+                    label, total_seconds_allocated, used_seconds, status, client_token
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)'
+            );
+            $stmt->execute([
+                $orgId, $coreUserId, $freelanceId, $factureClientId,
+                $label, $totalSeconds, $status, $clientToken,
+            ]);
+            $maintenanceId = (int) $pdo->lastInsertId();
+        }
+
+        $stmt = $pdo->prepare('SELECT * FROM timer_maintenance WHERE id = ? LIMIT 1');
+        $stmt->execute([$maintenanceId]);
+        $row = $stmt->fetch();
+        [$clientName, $clientCompany] = timer_maintenance_client_info($pdo, $factureClientId, $orgId);
+
+        timer_json(['success' => true, 'data' => timer_maintenance_format($row, $clientName, $clientCompany)]);
+    } catch (Exception $e) {
+        timer_log('Erreur sauvegarde maintenance: ' . $e->getMessage());
+        timer_fail('Erreur sauvegarde maintenance', 500);
+    }
+}
+
+// ======================= ROUTE : LOG MAINTENANCE (POST) =======================
+// Consomme du temps sur un forfait (session de maintenance). Enveloppe fixe.
+if ($action === 'maintenance-log' && $method === 'POST') {
+    timer_enforce_rate_limit('POST maintenance-log', 600, 3600, 'identity_or_ip', $coreUserId);
+
+    $rawInput = file_get_contents('php://input');
+    $data = json_decode($rawInput, true);
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $data === null)) {
+        timer_fail('JSON invalide', 400);
+    }
+    if (!$data) {
+        timer_fail('Données manquantes', 400);
+    }
+
+    $maintenanceId = isset($data['maintenanceId']) ? (int) $data['maintenanceId'] : 0;
+    $factureClientId = isset($data['factureClientId']) ? (int) $data['factureClientId'] : 0;
+    $duration = isset($data['durationSeconds']) ? (int) $data['durationSeconds'] : 0;
+
+    if ($maintenanceId <= 0 && $factureClientId <= 0) {
+        timer_fail('Forfait manquant', 400);
+    }
+    if ($duration <= 0) {
+        timer_fail('Durée invalide', 400);
+    }
+
+    $description = isset($data['description']) ? (string) $data['description'] : '';
+    $sessionStart = !empty($data['sessionStart']) ? (string) $data['sessionStart'] : null;
+    $sessionEnd = !empty($data['sessionEnd']) ? (string) $data['sessionEnd'] : null;
+    $sessionDate = !empty($data['sessionDate']) ? (string) $data['sessionDate'] : date('Y-m-d');
+
+    try {
+        if ($maintenanceId > 0) {
+            $stmt = $pdo->prepare(
+                'SELECT * FROM timer_maintenance WHERE id = ? AND freelance_id = ? AND org_id = ? LIMIT 1'
+            );
+            $stmt->execute([$maintenanceId, $freelanceId, $orgId]);
+        } else {
+            $stmt = $pdo->prepare(
+                'SELECT * FROM timer_maintenance WHERE facture_client_id = ? AND freelance_id = ? AND org_id = ? LIMIT 1'
+            );
+            $stmt->execute([$factureClientId, $freelanceId, $orgId]);
+        }
+        $maintenance = $stmt->fetch();
+        if (!$maintenance) {
+            timer_fail('Forfait de maintenance non trouvé', 404);
+        }
+        $maintenanceId = (int) $maintenance['id'];
+
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO timer_maintenance_logs (
+                org_id, core_user_id, maintenance_id, session_start, session_end,
+                session_date, duration_seconds, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $orgId, $coreUserId, $maintenanceId, $sessionStart, $sessionEnd,
+            $sessionDate, $duration, $description,
+        ]);
+
+        $newUsed = max(0, (int) $maintenance['used_seconds']) + $duration;
+        $total = (int) $maintenance['total_seconds_allocated'];
+        $newStatus = $maintenance['status'];
+        if ($newStatus !== 'paused') {
+            $newStatus = ($total > 0 && $newUsed >= $total) ? 'depleted' : 'active';
+        }
+
+        $stmt = $pdo->prepare(
+            'UPDATE timer_maintenance
+                SET used_seconds = ?, status = ?, last_activity = NOW(), updated_at = NOW()
+              WHERE id = ? AND org_id = ?'
+        );
+        $stmt->execute([$newUsed, $newStatus, $maintenanceId, $orgId]);
+
+        $pdo->commit();
+
+        $stmt = $pdo->prepare('SELECT * FROM timer_maintenance WHERE id = ? LIMIT 1');
+        $stmt->execute([$maintenanceId]);
+        $row = $stmt->fetch();
+        [$clientName, $clientCompany] = timer_maintenance_client_info($pdo, (int) $row['facture_client_id'], $orgId);
+
+        timer_json(['success' => true, 'data' => timer_maintenance_format($row, $clientName, $clientCompany)]);
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        timer_log('Erreur log maintenance: ' . $e->getMessage());
+        timer_fail('Erreur enregistrement maintenance', 500);
+    }
+}
+
+// ======================= ROUTE : DELETE MAINTENANCE =======================
+if ($action === 'maintenance' && $method === 'DELETE') {
+    timer_enforce_rate_limit('DELETE maintenance', 60, 3600, 'identity_or_ip', $coreUserId);
+
+    $rawInput = file_get_contents('php://input');
+    $data = json_decode($rawInput, true);
+    if ($rawInput !== '' && (json_last_error() !== JSON_ERROR_NONE || $data === null)) {
+        timer_fail('JSON invalide', 400);
+    }
+
+    $maintenanceId = isset($data['id']) ? (int) $data['id'] : 0;
+    $factureClientId = isset($data['factureClientId']) ? (int) $data['factureClientId'] : 0;
+    if ($maintenanceId <= 0 && $factureClientId <= 0) {
+        timer_fail('Identifiant manquant', 400);
+    }
+
+    try {
+        // id = 0 / facture_client_id = 0 ne correspondent a aucune ligne (PK/FK > 0)
+        $stmt = $pdo->prepare(
+            'DELETE FROM timer_maintenance
+              WHERE freelance_id = ? AND org_id = ? AND (id = ? OR facture_client_id = ?)'
+        );
+        $stmt->execute([$freelanceId, $orgId, $maintenanceId, $factureClientId]);
+
+        if ($stmt->rowCount() > 0) {
+            timer_json(['success' => true, 'message' => 'Forfait supprimé']);
+        } else {
+            timer_fail('Forfait non trouvé', 404);
+        }
+    } catch (Exception $e) {
+        timer_log('Erreur suppression maintenance: ' . $e->getMessage());
+        timer_fail('Erreur suppression maintenance', 500);
     }
 }
 

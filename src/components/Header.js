@@ -9,7 +9,8 @@ import {
   AlertTriangle,
   Download,
   MessageCircle,
-  RefreshCw
+  RefreshCw,
+  Wrench
 } from 'lucide-react';
 import { TRUSTY_TIMER_LOGO_DATA_URL } from '../assets/trustytimerLogoData';
 
@@ -70,12 +71,12 @@ const Header = ({
           <div className="flex items-center justify-center w-12 h-12 bg-white rounded-lg shadow-sm border border-gray-100">
             <img
               src={TRUSTY_TIMER_LOGO_DATA_URL}
-              alt="Logo TrustyTimer"
+              alt="Logo SorevaTimer"
               className="w-10 h-10 object-contain"
             />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">TrustyTimer</h1>
+            <h1 className="text-xl font-bold text-gray-900">SorevaTimer</h1>
             <p className="text-sm text-gray-500">
               {freelanceDisplayName
                 ? `Bonjour ${freelanceDisplayName}`
@@ -113,6 +114,19 @@ const Header = ({
             >
               <Timer className="w-4 h-4" />
               <span className="font-medium">Minuteur</span>
+            </button>
+            <button
+              onClick={() => !isTimerRunning && onViewChange('maintenance')}
+              disabled={isTimerRunning}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
+                currentView === 'maintenance'
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              } ${isTimerRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isTimerRunning ? 'Veuillez stopper la session en cours avant de changer de mode' : ''}
+            >
+              <Wrench className="w-4 h-4" />
+              <span className="font-medium">Maintenance</span>
             </button>
             <button
               onClick={() => !isTimerRunning && onViewChange('stopwatch')}

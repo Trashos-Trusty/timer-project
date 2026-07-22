@@ -1137,6 +1137,58 @@ ipcMain.handle('delete-project', async (event, projectId) => {
   }
 });
 
+// ============================================================
+// Maintenance : forfaits par client (découplés des projets)
+// ============================================================
+ipcMain.handle('load-maintenance', async () => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      return [];
+    }
+    return await apiManager.loadMaintenance();
+  } catch (error) {
+    console.error('Erreur lors du chargement de la maintenance:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('save-maintenance', async (event, maintenanceData) => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      throw new Error('Configuration API requise');
+    }
+    return await apiManager.saveMaintenance(maintenanceData);
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde de la maintenance:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('log-maintenance', async (event, logData) => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      throw new Error('Configuration API requise');
+    }
+    return await apiManager.logMaintenance(logData);
+  } catch (error) {
+    console.error('Erreur lors de l\'enregistrement de la maintenance:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('delete-maintenance', async (event, payload) => {
+  try {
+    if (!configManager || !configManager.isApiConfigured()) {
+      throw new Error('Configuration API requise');
+    }
+    await apiManager.deleteMaintenance(payload);
+    return true;
+  } catch (error) {
+    console.error('Erreur lors de la suppression de la maintenance:', error);
+    throw error;
+  }
+});
+
 // Gestion de la configuration API
 ipcMain.handle('get-api-config', async () => {
   if (!configManager) {

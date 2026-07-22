@@ -23,7 +23,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadClients: () => ipcRenderer.invoke('load-clients'),
   loadProject: (projectId) => ipcRenderer.invoke('load-project', projectId),
   deleteProject: (projectId) => ipcRenderer.invoke('delete-project', projectId),
-  
+
+  // API Maintenance (forfaits par client, découplés des projets)
+  loadMaintenance: () => ipcRenderer.invoke('load-maintenance'),
+  saveMaintenance: (maintenanceData) => ipcRenderer.invoke('save-maintenance', maintenanceData),
+  logMaintenance: (logData) => ipcRenderer.invoke('log-maintenance', logData),
+  deleteMaintenance: (payload) => ipcRenderer.invoke('delete-maintenance', payload),
+
   // API pour la gestion du temps
   startTimer: (projectId) => ipcRenderer.invoke('start-timer', projectId),
   pauseTimer: (projectId) => ipcRenderer.invoke('pause-timer', projectId),

@@ -518,6 +518,68 @@ class ApiManager {
     }, 'deleteProject');
   }
 
+  // ============================================================
+  // Maintenance : forfaits par client, découplés des projets
+  // ============================================================
+
+  // Charger tous les forfaits de maintenance du freelance
+  async loadMaintenance() {
+    return this.queueOperation(async () => {
+      const response = await this.makeSecureRequest('maintenance', {
+        method: 'GET'
+      });
+      if (response.success) {
+        return response.data || [];
+      }
+      throw new Error(response.message || 'Erreur chargement maintenance');
+    }, 'loadMaintenance');
+  }
+
+  // Créer ou mettre à jour le forfait de maintenance d'un client
+  async saveMaintenance(maintenanceData) {
+    return this.queueOperation(async () => {
+      const response = await this.makeSecureRequest('maintenance', {
+        method: 'POST',
+        body: JSON.stringify(maintenanceData)
+      });
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.message || 'Erreur sauvegarde maintenance');
+    }, 'saveMaintenance');
+  }
+
+  // Enregistrer une session de maintenance (consomme du temps)
+  async logMaintenance(logData) {
+    return this.queueOperation(async () => {
+      const response = await this.makeSecureRequest('maintenance-log', {
+        method: 'POST',
+        body: JSON.stringify(logData)
+      });
+      if (response.success) {
+        return response.data;
+      }
+      throw new Error(response.message || 'Erreur enregistrement maintenance');
+    }, 'logMaintenance');
+  }
+
+  // Supprimer un forfait de maintenance
+  async deleteMaintenance(payload) {
+    return this.queueOperation(async () => {
+      const body = typeof payload === 'object' && payload !== null
+        ? payload
+        : { id: payload };
+      const response = await this.makeSecureRequest('maintenance', {
+        method: 'DELETE',
+        body: JSON.stringify(body)
+      });
+      if (response.success) {
+        return true;
+      }
+      throw new Error(response.message || 'Erreur suppression maintenance');
+    }, 'deleteMaintenance');
+  }
+
   // Envoyer un feedback utilisateur durant la bêta
   async sendFeedback(feedback) {
     return this.queueOperation(async () => {
