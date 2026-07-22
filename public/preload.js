@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Partage portail client maintenance (/m/{token})
   ensureShareToken: (projectId) => ipcRenderer.invoke('ensure-share-token', projectId),
-  loadPtProjects: () => ipcRenderer.invoke('load-pt-projects'),
+  loadPtProjects: (projectId) => ipcRenderer.invoke('load-pt-projects', projectId),
   linkPtProject: (projectId, ptProjectId) => ipcRenderer.invoke('link-pt-project', projectId, ptProjectId),
 
   // API pour la gestion du temps

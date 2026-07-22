@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Share2, Copy, Check, ExternalLink, Link as LinkIcon, Globe, FolderKanban } from 'lucide-react';
+import { Share2, Copy, Check, ExternalLink, Link as LinkIcon } from 'lucide-react';
 
 /**
- * Carte "Affichage côté client" — sous le minuteur, pour le projet sélectionné.
+ * Barre compacte "Affichage côté client" sous le minuteur, pour le projet sélectionné.
  * Modèle unifié : le temps restant du projet timer est le temps de maintenance.
- * 3 façons de le montrer au client :
- *   1. WordPress (plugin) — déjà géré via le bouton "Plugin WP".
- *   2. Portail projet (Project Tracker) — à venir (nécessite un rattachement client).
- *   3. Lien direct /m/{token} — client sans WordPress ni projet.
+ *  - Lien direct /m/{token} (client sans WordPress ni projet).
+ *  - Rattachement à un projet Soreva : proposé seulement s'il existe déjà un projet
+ *    pour CE client (sinon rien).
+ * Volontairement minimale pour ne pas masquer la colonne du minuteur.
  */
 const ClientShareCard = ({ project, onProjectUpdate = () => {} }) => {
   const [portalUrl, setPortalUrl] = useState(project?.portalUrl || null);
@@ -27,13 +27,14 @@ const ClientShareCard = ({ project, onProjectUpdate = () => {} }) => {
     setError(null);
   }, [project?.id, project?.portalUrl, project?.ptProjectId]);
 
-  // Charger une fois la liste des projets Soreva (Project-tracker)
+  // Charger les projets Soreva du client de CETTE enveloppe (vide si aucun)
   useEffect(() => {
     let cancelled = false;
+    setPtProjects([]);
     (async () => {
-      if (!window.electronAPI) return;
+      if (!window.electronAPI || !project?.id) return;
       try {
-        const list = await window.electronAPI.loadPtProjects();
+        const list = await window.electronAPI.loadPtProjects(project.id);
         if (!cancelled) setPtProjects(Array.isArray(list) ? list : []);
       } catch (err) {
         console.error('Erreur chargement projets Soreva:', err);
@@ -42,24 +43,7 @@ const ClientShareCard = ({ project, onProjectUpdate = () => {} }) => {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const handleLink = async (value) => {
-    if (!window.electronAPI || !project?.id) return;
-    const newPtId = value ? parseInt(value, 10) : null;
-    setLinking(true);
-    setError(null);
-    try {
-      const result = await window.electronAPI.linkPtProject(project.id, newPtId);
-      setPtProjectId(result.ptProjectId);
-      onProjectUpdate({ ...project, ptProjectId: result.ptProjectId });
-    } catch (err) {
-      console.error('Erreur rattachement projet Soreva:', err);
-      setError(String(err?.message || err || 'Erreur de rattachement'));
-    } finally {
-      setLinking(false);
-    }
-  };
+  }, [project?.id]);
 
   const handleGenerate = async () => {
     if (!window.electronAPI || !project?.id) return;
@@ -94,115 +78,77 @@ const ClientShareCard = ({ project, onProjectUpdate = () => {} }) => {
     }
   };
 
+  const handleLink = async (value) => {
+    if (!window.electronAPI || !project?.id) return;
+    const newPtId = value ? parseInt(value, 10) : null;
+    setLinking(true);
+    setError(null);
+    try {
+      const result = await window.electronAPI.linkPtProject(project.id, newPtId);
+      setPtProjectId(result.ptProjectId);
+      onProjectUpdate({ ...project, ptProjectId: result.ptProjectId });
+    } catch (err) {
+      console.error('Erreur rattachement projet Soreva:', err);
+      setError(String(err?.message || err || 'Erreur de rattachement'));
+    } finally {
+      setLinking(false);
+    }
+  };
+
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white px-6 py-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Share2 className="w-4 h-4 text-primary-600" />
-        <h3 className="text-sm font-semibold text-gray-900">Affichage du temps restant côté client</h3>
-      </div>
+    <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-2">
+      <div className="flex items-center gap-2 flex-wrap text-xs">
+        <span className="flex items-center gap-1 text-gray-500 font-medium shrink-0">
+          <Share2 className="w-3.5 h-3.5" /> Lien client
+        </span>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* 1. WordPress */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 border border-gray-100">
-          <Globe className="w-4 h-4 text-purple-500 mt-0.5" />
-          <div>
-            <div className="text-xs font-semibold text-gray-800">Site WordPress</div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Le plugin affiche le temps restant sur le site du client (bouton « Plugin WP »).
-            </p>
-          </div>
-        </div>
-
-        {/* 2. Portail projet — rattachement explicite */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 border border-gray-100">
-          <FolderKanban className="w-4 h-4 text-blue-500 mt-0.5" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-gray-800">Portail projet Soreva</div>
-            <p className="text-xs text-gray-500 mt-0.5 mb-1.5">
-              Affiche le temps restant sur l'espace projet du client.
-            </p>
-            <select
-              value={ptProjectId || ''}
-              onChange={(e) => handleLink(e.target.value)}
-              disabled={linking}
-              className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
-            >
-              <option value="">— Non rattaché —</option>
-              {ptProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.clientName ? `${p.name} · ${p.clientName}` : p.name}
-                </option>
-              ))}
-            </select>
-            {ptProjectId ? (
-              <p className="text-xs text-success-600 mt-1 flex items-center gap-1">
-                <Check className="w-3 h-3" /> Rattaché
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        {/* 3. Lien direct */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-primary-50 border border-primary-100">
-          <LinkIcon className="w-4 h-4 text-primary-600 mt-0.5" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-gray-800">Lien direct</div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Sans WordPress ni projet : un lien sécurisé à partager.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Zone lien /m/ */}
-      <div className="mt-3">
-        {error && (
-          <div className="mb-2 text-xs text-danger-600">{error}</div>
-        )}
         {portalUrl ? (
-          <div className="flex items-center gap-2">
+          <>
             <input
               type="text"
               readOnly
               value={portalUrl}
               onFocus={(e) => e.target.select()}
-              className="flex-1 min-w-0 text-xs border border-gray-300 rounded-md px-3 py-2 bg-gray-50 text-gray-700 font-mono"
+              className="flex-1 min-w-[140px] text-xs border border-gray-200 rounded px-2 py-1 bg-gray-50 text-gray-600 font-mono"
             />
-            <button
-              onClick={handleCopy}
-              className="btn-secondary flex items-center space-x-1 shrink-0"
-              title="Copier le lien"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-success-600" />
-                  <span>Copié</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>Copier</span>
-                </>
-              )}
+            <button onClick={handleCopy} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Copier le lien">
+              {copied ? <Check className="w-4 h-4 text-success-600" /> : <Copy className="w-4 h-4" />}
             </button>
-            <button
-              onClick={handleOpen}
-              className="btn-secondary flex items-center shrink-0"
-              title="Ouvrir le portail client"
-            >
+            <button onClick={handleOpen} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Ouvrir le portail client">
               <ExternalLink className="w-4 h-4" />
             </button>
-          </div>
+          </>
         ) : (
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className={`btn-primary flex items-center space-x-2 ${generating ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded bg-primary-50 text-primary-700 hover:bg-primary-100 ${generating ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            <LinkIcon className="w-4 h-4" />
-            <span>{generating ? 'Génération…' : 'Générer le lien client'}</span>
+            <LinkIcon className="w-3.5 h-3.5" />
+            {generating ? 'Génération…' : 'Générer un lien'}
           </button>
         )}
+
+        {/* Rattachement projet : seulement si un projet existe pour ce client */}
+        {ptProjects.length > 0 && (
+          <div className="flex items-center gap-1 shrink-0 border-l border-gray-200 pl-2 ml-1">
+            <span className="text-gray-400">Projet&nbsp;:</span>
+            <select
+              value={ptProjectId || ''}
+              onChange={(e) => handleLink(e.target.value)}
+              disabled={linking}
+              className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white max-w-[160px] disabled:opacity-50"
+              title="Afficher aussi le temps restant sur l'espace projet du client"
+            >
+              <option value="">Non rattaché</option>
+              {ptProjects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {error && <span className="text-danger-600 shrink-0">{error}</span>}
       </div>
     </div>
   );

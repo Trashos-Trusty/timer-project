@@ -1150,12 +1150,12 @@ ipcMain.handle('ensure-share-token', async (event, projectId) => {
   }
 });
 
-ipcMain.handle('load-pt-projects', async () => {
+ipcMain.handle('load-pt-projects', async (event, projectId) => {
   try {
     if (!configManager || !configManager.isApiConfigured()) {
       return [];
     }
-    return await apiManager.loadPtProjects();
+    return await apiManager.loadPtProjects(projectId);
   } catch (error) {
     console.error('Erreur lors du chargement des projets Soreva:', error);
     throw error;

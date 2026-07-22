@@ -980,17 +980,62 @@ if ($action === 'ensure-share-token' && $method === 'POST') {
 }
 
 // ======================= ROUTE : LISTE PROJETS PROJECT-TRACKER =======================
-// Pour le rattachement explicite d'une enveloppe timer à un projet PT.
+// Uniquement les projets PT du CLIENT de l'enveloppe timer (?projectId=<id|uuid>).
+// A la création d'une maintenance on choisit un client ; on ne propose donc que
+// les projets déjà créés pour ce client (sinon liste vide).
 if ($action === 'pt-projects' && $method === 'GET') {
     timer_enforce_rate_limit('GET pt-projects', 300, 3600, 'identity_or_ip', $coreUserId);
 
+    $rawId = $_GET['projectId'] ?? '';
+    $idString = is_scalar($rawId) ? (string) $rawId : '';
+    if ($idString === '') {
+        timer_fail('Identifiant projet manquant', 400);
+    }
+    $isNumeric = is_numeric($rawId) && ctype_digit($idString);
+
     try {
+        // Résoudre l'enveloppe timer et son client partagé
+        if ($isNumeric) {
+            $stmt = $pdo->prepare(
+                'SELECT facture_client_id FROM timer_projects
+                  WHERE freelance_id = ? AND org_id = ? AND (project_uuid = ? OR id = ?) LIMIT 1'
+            );
+            $stmt->execute([$freelanceId, $orgId, $idString, (int) $rawId]);
+        } else {
+            $stmt = $pdo->prepare(
+                'SELECT facture_client_id FROM timer_projects
+                  WHERE freelance_id = ? AND org_id = ? AND project_uuid = ? LIMIT 1'
+            );
+            $stmt->execute([$freelanceId, $orgId, $idString]);
+        }
+        $env = $stmt->fetch();
+        $factureClientId = $env ? (int) ($env['facture_client_id'] ?? 0) : 0;
+
+        // Pas de client rattaché → aucun projet à proposer
+        if ($factureClientId <= 0) {
+            timer_json(['success' => true, 'data' => []]);
+        }
+
+        $stmt = $pdo->prepare('SELECT name, email FROM facture_clients WHERE id = ? AND org_id = ? LIMIT 1');
+        $stmt->execute([$factureClientId, $orgId]);
+        $client = $stmt->fetch();
+        if (!$client) {
+            timer_json(['success' => true, 'data' => []]);
+        }
+        $clientName = trim((string) ($client['name'] ?? ''));
+        $clientEmail = trim((string) ($client['email'] ?? ''));
+
+        // Projets PT du même client : match par email (prioritaire) ou nom
         $stmt = $pdo->prepare(
             'SELECT id, name, client_name FROM pt_projects
-              WHERE org_id = ? AND core_user_id = ?
+              WHERE org_id = ?
+                AND (
+                    (client_email <> \'\' AND client_email = ?)
+                    OR (client_name <> \'\' AND client_name = ?)
+                )
               ORDER BY name ASC'
         );
-        $stmt->execute([$orgId, $coreUserId]);
+        $stmt->execute([$orgId, $clientEmail, $clientName]);
         $rows = $stmt->fetchAll();
 
         $list = array_map(static function ($r) {

@@ -532,10 +532,11 @@ class ApiManager {
     }, 'ensureShareToken');
   }
 
-  // Lister les projets Project-tracker du freelance (pour rattachement)
-  async loadPtProjects() {
+  // Lister les projets Project-tracker du CLIENT de l'enveloppe (pour rattachement)
+  async loadPtProjects(projectId) {
     return this.queueOperation(async () => {
-      const response = await this.makeSecureRequest('pt-projects', {
+      const endpoint = `pt-projects&projectId=${encodeURIComponent(projectId ?? '')}`;
+      const response = await this.makeSecureRequest(endpoint, {
         method: 'GET'
       });
       if (response.success) {
