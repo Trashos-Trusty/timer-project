@@ -1025,23 +1025,25 @@ if ($action === 'pt-projects' && $method === 'GET') {
         $clientName = trim((string) ($client['name'] ?? ''));
         $clientEmail = trim((string) ($client['email'] ?? ''));
 
-        // Aucun identifiant client exploitable → rien à proposer
-        if ($clientName === '' && $clientEmail === '') {
-            timer_json(['success' => true, 'data' => []]);
-        }
-
-        // Projets PT du même client uniquement : match email (prioritaire) ou nom,
-        // insensible à la casse et aux espaces. Jamais tous les projets.
+        // Projets PT du même client uniquement. Source de vérité = facture_client_id.
+        // Repli nom/email (insensible casse/espaces) pour les anciens projets non rattachés.
+        // Jamais tous les projets.
         $stmt = $pdo->prepare(
             'SELECT id, name, client_name FROM pt_projects
               WHERE org_id = ?
                 AND (
-                    (TRIM(client_email) <> \'\' AND LOWER(TRIM(client_email)) = LOWER(?))
-                    OR (TRIM(client_name) <> \'\' AND LOWER(TRIM(client_name)) = LOWER(?))
+                    facture_client_id = ?
+                    OR (
+                        facture_client_id IS NULL
+                        AND (
+                            (TRIM(client_email) <> \'\' AND LOWER(TRIM(client_email)) = LOWER(?))
+                            OR (TRIM(client_name) <> \'\' AND LOWER(TRIM(client_name)) = LOWER(?))
+                        )
+                    )
                 )
               ORDER BY name ASC'
         );
-        $stmt->execute([$orgId, $clientEmail, $clientName]);
+        $stmt->execute([$orgId, $factureClientId, $clientEmail, $clientName]);
         $rows = $stmt->fetchAll();
 
         $list = array_map(static function ($r) {
