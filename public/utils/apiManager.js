@@ -51,9 +51,6 @@ class ApiManager {
       this.lastAuthAttempt = now;
 
       const url = `${this.config.baseUrl}?action=login`;
-      console.log('🔍 DEBUG - URL d\'authentification:', url);
-      console.log('🔍 DEBUG - Config baseUrl:', this.config.baseUrl);
-      console.log('🔍 DEBUG - Credentials:', { email: credentials.email, password: '***' });
 
       const response = await fetch(url, {
         method: 'POST',
@@ -66,9 +63,6 @@ class ApiManager {
         }),
         timeout: this.config.timeout
       });
-
-      console.log('🔍 DEBUG - Response status:', response.status);
-      console.log('🔍 DEBUG - Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (response.status === 429) {
         const retryAfterHeader = response.headers.get('Retry-After');
@@ -96,8 +90,6 @@ class ApiManager {
       }
 
       if (!response.ok) {
-        const responseText = await response.text();
-        console.log('🔍 DEBUG - Response text:', responseText.substring(0, 500));
         throw new Error(`Erreur d'authentification: ${response.status}`);
       }
 
@@ -328,13 +320,6 @@ class ApiManager {
     }
 
     const url = `${this.config.baseUrl}?action=${endpoint}`;
-    const tokenPreview = this.config.token ? `${this.config.token.slice(0, 8)}...${this.config.token.slice(-8)}` : 'none';
-    console.log(`🔐 Requête sécurisée vers ${endpoint}`, {
-      url,
-      tokenPresent: Boolean(this.config.token),
-      tokenPreview,
-      freelanceId: this.config.freelanceId,
-    });
     const requestOptions = {
       ...options,
       headers: {

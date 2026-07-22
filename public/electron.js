@@ -5,46 +5,45 @@ const log = require('electron-log/main');
 // Remplacer electron-is-dev par une vérification simple
 const isDev = process.env.NODE_ENV === 'development' || process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath);
 
-const originalConsole = {
-  log: console.log.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-  info: console.info.bind(console),
-  debug: console.debug ? console.debug.bind(console) : console.log.bind(console),
-};
+const noop = () => {};
 
+/**
+ * En production : aucun log visible.
+ * - Transport console d'electron-log désactivé (rien dans la console/DevTools/terminal).
+ * - Transport fichier limité aux erreurs (diagnostic de crash uniquement), rotation 1 Mo,
+ *   sans capturer les messages du renderer (qui peuvent contenir des données client).
+ * - Les appels console.log/info/debug/warn deviennent des no-op ; seul console.error
+ *   est routé vers le fichier d'erreurs local, jamais vers une sortie visible.
+ */
 function setupProductionLogging() {
   try {
-    log.transports.file.level = 'debug';
-    log.transports.file.maxSize = 10 * 1024 * 1024; // 10 Mo pour éviter un fichier trop volumineux
-    log.transports.console.level = 'debug';
+    log.transports.console.level = false; // aucune sortie console visible
+    log.transports.file.level = 'error';  // uniquement les erreurs, pour le support
+    log.transports.file.maxSize = 1 * 1024 * 1024; // 1 Mo, rotation
 
-    const logFile = log.transports.file.getFile();
-
-    Object.assign(console, log.functions);
-
-    log.info('📝 Journalisation production activée (niveau debug)');
-    if (logFile?.path) {
-      log.info(`📄 Fichier de logs: ${logFile.path}`);
-    }
-
-    app.on('browser-window-created', (_event, window) => {
-      window.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-        const levelMap = {
-          0: 'info',
-          1: 'warn',
-          2: 'error',
-          3: 'info',
-          4: 'debug',
-        };
-
-        const logger = log[levelMap[level]] || log.info;
-        const source = sourceId ? sourceId.replace(appStartUrl, '').trim() : 'renderer';
-        logger(`[renderer:${source}:${line}] ${message}`);
-      });
-    });
+    // Neutraliser toute journalisation applicative visible.
+    console.log = noop;
+    console.info = noop;
+    console.debug = noop;
+    console.warn = noop;
+    console.table = noop;
+    console.dir = noop;
+    console.trace = noop;
+    // Conserver uniquement les erreurs, redirigées vers le fichier (non visible).
+    console.error = (...args) => {
+      try {
+        log.error(...args);
+      } catch (_e) {
+        /* ne jamais faire échouer l'app à cause du logging */
+      }
+    };
   } catch (error) {
-    originalConsole.error('❌ Impossible d\'initialiser la journalisation production:', error);
+    // En dernier recours, neutraliser malgré tout la console.
+    console.log = noop;
+    console.info = noop;
+    console.debug = noop;
+    console.warn = noop;
+    console.error = noop;
   }
 }
 
@@ -81,6 +80,35 @@ const appStartUrl = isDev
 
 const appIconPath = path.join(__dirname, '..', 'assets', 'trustytimer-logo.png');
 const appIcon = nativeImage.createFromPath(appIconPath);
+
+// Origines autorisées pour toute navigation / chargement d'URL dans la fenêtre
+// principale. Toute autre origine est refusée (défense contre le chargement de
+// contenu distant arbitraire via le protocole soreva-timer:// ou un lien piégé).
+const ALLOWED_NAV_ORIGINS = new Set([
+  'https://timer.soreva.app',
+  'https://dashboard.soreva.app',
+  'https://project.soreva.app',
+  'https://facture.soreva.app',
+]);
+if (isDev) {
+  ALLOWED_NAV_ORIGINS.add('http://localhost:3000');
+}
+
+function isAllowedNavUrl(urlString) {
+  if (typeof urlString !== 'string' || urlString === '') {
+    return false;
+  }
+  try {
+    const parsed = new URL(urlString);
+    // Le bundle local (file://) est toujours autorisé.
+    if (parsed.protocol === 'file:') {
+      return true;
+    }
+    return parsed.protocol === 'https:' && ALLOWED_NAV_ORIGINS.has(parsed.origin);
+  } catch (_e) {
+    return false;
+  }
+}
 
 if (!isDev) {
   setupProductionLogging();
@@ -533,15 +561,14 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Sécurité : Bloquer la navigation vers des URLs externes
+  // Sécurité : Bloquer la navigation vers des URLs externes (allowlist stricte
+  // par origine ; un lien externe est ouvert dans le navigateur système).
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const parsedUrl = new URL(navigationUrl);
-    
-    // Permettre seulement les URLs locales et l'API
-    if (parsedUrl.origin !== 'http://localhost:3000' && 
-        parsedUrl.origin !== 'file://' && 
-        !parsedUrl.origin.includes('timer.soreva.app')) {
+    if (!isAllowedNavUrl(navigationUrl)) {
       event.preventDefault();
+      if (typeof navigationUrl === 'string' && navigationUrl.startsWith('https://')) {
+        shell.openExternal(navigationUrl);
+      }
     }
   });
 
@@ -584,7 +611,11 @@ function createMenu() {
     { role: 'forcereload', label: 'Actualiser (force)' }
   ];
 
-  viewSubmenu.push({ role: 'toggledevtools', label: 'Outils de développement' });
+  // Outils de développement : uniquement hors production (aucun accès aux logs
+  // du renderer pour l'utilisateur final).
+  if (isDev) {
+    viewSubmenu.push({ role: 'toggledevtools', label: 'Outils de développement' });
+  }
 
   viewSubmenu.push({ type: 'separator' });
 
@@ -674,10 +705,13 @@ if (!gotTheLock) {
     const protocolUrl = commandLine.find((arg) => typeof arg === 'string' && arg.startsWith('soreva-timer://'));
     if (protocolUrl && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
       // Optionnel : charger une URL passée en paramètre pour SSO (ex. soreva-timer://open?url=...)
+      // Seules les origines Soreva de confiance sont autorisées : on ne charge JAMAIS
+      // une URL distante arbitraire dans la fenêtre privilégiée (protection contre
+      // un lien soreva-timer:// piégé qui injecterait du contenu tiers).
       try {
         const parsed = new URL(protocolUrl);
         const targetUrl = parsed.searchParams.get('url');
-        if (targetUrl && mainWindow.webContents) {
+        if (targetUrl && isAllowedNavUrl(targetUrl)) {
           mainWindow.loadURL(targetUrl);
         }
       } catch (_e) {
@@ -1032,19 +1066,6 @@ ipcMain.handle('save-project', async (event, projectData, originalName = null) =
       console.warn('🔒 Sauvegarde bloquée: token d\'authentification manquant.');
       throw authError;
     }
-
-    // Debug: Afficher les paramètres reçus par Electron
-    console.log('⚡ Electron reçoit:', {
-      projectId: projectData.id,
-      projectName: projectData.name,
-      originalName: originalName,
-      hasOriginalName: !!originalName,
-      tokenPresent: Boolean(apiManager?.config?.token),
-      tokenPreview: apiManager?.config?.token
-        ? `${apiManager.config.token.slice(0, 8)}...${apiManager.config.token.slice(-8)}`
-        : 'none',
-      freelanceId: apiManager?.config?.freelanceId ?? null,
-    });
 
     const savedProject = await apiManager.saveProject(projectData, originalName);
 
