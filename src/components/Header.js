@@ -48,14 +48,23 @@ const Header = ({
 
   // Fonction pour télécharger le plugin WordPress
   const handleDownloadPlugin = () => {
-    // URL sécurisée vers le plugin - à adapter selon votre hébergement
     const pluginUrl =
       process.env.REACT_APP_PLUGIN_DOWNLOAD_URL || 'https://timer.soreva.app/plugin/plugin.zip';
-    
-    // Créer un élément de téléchargement temporaire
+
+    // Dans Electron, ouvrir l'URL via le navigateur système (shell.openExternal) :
+    // un <a download> cross-origin est ignoré par Chromium en contexte file://,
+    // d'où l'absence de téléchargement. openExternal télécharge le .zip de façon fiable.
+    if (window.electronAPI && typeof window.electronAPI.openExternal === 'function') {
+      window.electronAPI.openExternal(pluginUrl);
+      return;
+    }
+
+    // Repli navigateur (exécution hors Electron) : téléchargement classique.
     const link = document.createElement('a');
     link.href = pluginUrl;
     link.download = 'timer-project-wordpress-plugin.zip';
+    link.target = '_blank';
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
